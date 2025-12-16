@@ -1,0 +1,52 @@
+name: jinete
+description: Campus Carpool App - Jinete
+
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: '>=3.0.0 <4.0.0'
+
+dependencies:
+  flutter:
+    sdk: flutter
+  cupertino_icons: ^1.0.2
+  provider: ^6.0.5
+  connectivity_plus: ^5.0.2
+  firebase_core: ^2.32.0
+  firebase_auth: ^4.20.0
+  cloud_firestore: ^4.17.5
+
+  firebase_storage:
+  google_maps_flutter: ^2.14.0
+  google_fonts: ^6.3.3
+  permission_handler: 
+  geolocator: ^12.0.0 
+  geocoding: ^3.0.0 
+  http: ^1.6.0
+  uuid: ^4.4.0 
+  flutter_polyline_points: ^3.1.0
+  geoflutterfire2: ^2.3.15
+  url_launcher: ^6.3.2
+  intl: ^0.20.2
+  flutter_local_notifications: ^19.5.0
+ 
+
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^2.0.0
+  flutter_launcher_icons: ^0.13.1
+
+flutter_icons:
+  android: "launcher_icon"
+  ios: true
+  image_path: "assets/images/logo.png"
+
+flutter:
+  uses-material-design: true
+  assets:
+    - assets/images/
+    - themes/

@@ -1,0 +1,55 @@
+{
+  "project_info": {
+    "project_number": "623431021180",
+    "firebase_url": "https://jinete-user-app-default-rtdb.firebaseio.com",
+    "project_id": "jinete-user-app",
+    "storage_bucket": "jinete-user-app.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:623431021180:android:5dc907701c3d738d444ff9",
+        "android_client_info": {
+          "package_name": "com.example.jinete_driver_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4gfqeC-D3kGSbNUmHYF8xdSCPPFEzT6I"
+        },
+        {
+          "current_key": "AIzaSyCBtIrXPJjIwhYfThKC7UJjbcwojWDjbzA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:623431021180:android:1f5bcdb5d905d194444ff9",
+        "android_client_info": {
+          "package_name": "com.example.jinete_user_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD4gfqeC-D3kGSbNUmHYF8xdSCPPFEzT6I"
+        },
+        {
+          "current_key": "AIzaSyCBtIrXPJjIwhYfThKC7UJjbcwojWDjbzA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
