@@ -31,9 +31,11 @@ class _LoginScreenState extends State<LoginScreen> {
   final Color _textColor = Colors.white;
   final Color _hintColor = Colors.white54;
 
-  void checkIfNetworkIsAvailable() {
-    cMethods.checkConnectivity(context);
-    signInFormValidation();
+  void checkIfNetworkIsAvailable() async {
+    bool isConnected = await cMethods.checkConnectivity(context);
+    if (isConnected) {
+      signInFormValidation();
+    }
   }
 
   void signInFormValidation() {

@@ -12,6 +12,7 @@ import "package:google_fonts/google_fonts.dart";
 import "package:geolocator/geolocator.dart";
 import "package:google_maps_flutter/google_maps_flutter.dart";
 import "package:jinete/authentication/login_screen.dart";
+import 'package:jinete/pages/chat_screen.dart'; // Added
 import "package:jinete/global/global_var.dart";
 import "package:jinete/methods/common_methods.dart";
 import "package:jinete/pages/search_destination_page.dart";
@@ -41,11 +42,15 @@ class _HomePageState extends State<HomePage> {
   double bottomMapPadding = 0;
 
   String rideOtp = "";
+  bool isTripStarted = false;
   String driverName = "Driver";
   String driverPhone = "";
   String driverCollege = "";
+  String rideStatusText = "Driver Arriving";
 
   String userCollege = ""; // For sending to driver
+  StreamSubscription<DocumentSnapshot>? driverLocationSubscription;
+  BitmapDescriptor? carMarkerIcon;
 
   DirectionDetails? tripDirectionDetails;
   TextEditingController offerAmountTextEditingController =
@@ -72,6 +77,30 @@ class _HomePageState extends State<HomePage> {
   void initState() {
     super.initState();
     PushNotificationService.initializeNotification();
+    getUserInfo();
+    getUserInfo();
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    createMarkerIcon();
+  }
+
+  getUserInfo() {
+    FirebaseFirestore.instance
+        .collection("users")
+        .doc(FirebaseAuth.instance.currentUser!.uid)
+        .get()
+        .then((snap) {
+      if (snap.exists) {
+        setState(() {
+          userName = snap.data()?["name"] ?? "";
+          userPhone = snap.data()?["phone"] ?? "";
+          userCollege = snap.data()?["collegeName"] ?? "";
+        });
+      }
+    });
   }
 
   void updateMapTheme(GoogleMapController controller) {
@@ -92,9 +121,11 @@ class _HomePageState extends State<HomePage> {
 
   retrieveDirectionDetails(DirectionDetails? directionDetails) async {
     if (directionDetails == null) return;
+    print(
+        "DEBUG: retrieveDirectionDetails called. Points: ${directionDetails.encodedPoints?.length}");
 
     List<PointLatLng> decodedPolylinePointsResult =
-        PolylinePoints.decodePolyline(directionDetails.encodedPoints!);
+        PolylinePoints().decodePolyline(directionDetails.encodedPoints!);
 
     pLineCoOrdinatesList.clear();
 
@@ -108,6 +139,8 @@ class _HomePageState extends State<HomePage> {
     polylineSet.clear();
 
     setState(() {
+      print(
+          "DEBUG: Updating UI with polyline. Coordinates: ${pLineCoOrdinatesList.length}");
       Polyline polyline = Polyline(
         polylineId: const PolylineId("polylineID"),
         color: _accentColor,
@@ -260,14 +293,15 @@ class _HomePageState extends State<HomePage> {
       // Show Searching Dialog
       showSearchingForDriversDialog();
 
-      // Start listening for Counter Offers
-      listenForCounterOffers();
+      // Start listening for Ride Updates
+      listenToRideStream();
     }).catchError((error) {
+      if (!mounted) return;
       cMethods.displaySnackBar("Error: $error", context);
     });
   }
 
-  void listenForCounterOffers() {
+  void listenToRideStream() {
     if (currentRideRequestId.isEmpty) return;
 
     FirebaseFirestore.instance
@@ -301,11 +335,34 @@ class _HomePageState extends State<HomePage> {
             Navigator.pop(context); // Close "Searching..." Dialog
           }
 
+          // Start Listening to Driver Location
+          listenToDriverLocation(snapshot.data()?["driver_id"] ?? "");
+
           setState(() {
             searchContainerHeight = 0;
             tripDetailsContainerHeight = 0;
             driverDetailsContainerHeight = 300;
             bottomMapPadding = 320;
+            rideStatusText = "Driver Arriving";
+          });
+        }
+        // 2. Check for Driver Arrival
+        else if (status == "arrived") {
+          setState(() {
+            rideStatusText = "Driver Arrived";
+          });
+          // Show a local notification and snackbar
+          PushNotificationService.showNotification("Driver Arrived",
+              "Your ride has arrived, please share the OTP with your driver.");
+          cMethods.displaySnackBar(
+              "Your ride has arrived, please share the OTP with your driver.",
+              context);
+        }
+        // 3. Check for Trip Start
+        else if (status == "ontrip") {
+          setState(() {
+            rideStatusText = "Heading to Destination";
+            isTripStarted = true;
           });
         }
         // 2. Check for Counter Offer
@@ -313,55 +370,69 @@ class _HomePageState extends State<HomePage> {
             counterOffer != offerAmountTextEditingController.text) {
           showCounterOfferDialog(counterOffer);
         }
-        // 3. Check for Cancellation
+        // 4. Check for Trip End
+        else if (status == "completed") {
+          // 1. Stop Tracking
+          resetApp();
+
+          // 2. Show Dialog
+          showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (context) => AlertDialog(
+                      title: const Text("Destination Reached"),
+                      content: const Text(
+                          "You have reached your destination, Now you can pay your Rider"),
+                      actions: [
+                        ElevatedButton(
+                            onPressed: () {
+                              Navigator.pop(context);
+                            },
+                            child: const Text("Pay & Rate"))
+                      ]));
+        }
+        // 5. Check for Cancellation
         else if (status == "cancelled") {
-          PushNotificationService.showNotification("Ride Cancelled",
-              "The Driver has cancelled the Ride. Please request another Ride.");
-          
-          setState(() {
-            searchContainerHeight = 276;
-            tripDetailsContainerHeight = 0;
-            driverDetailsContainerHeight = 0;
-            bottomMapPadding = 300;
-            polylineSet.clear();
-            markersSet.clear();
-            circlesSet.clear();
-            pLineCoOrdinatesList.clear();
-            tripDirectionDetails = null;
-            currentRideRequestId = ""; 
-          });
+          // Only show alert if cancelled by DRIVER
+          String cancelledBy = snapshot.data()?["cancelled_by"] ?? "";
+          if (cancelledBy == "driver") {
+            PushNotificationService.showNotification("Ride Cancelled",
+                "The Driver has cancelled the Ride. Please request another Ride.");
 
-           // Close any open dialogs
-           if (Navigator.canPop(context)) {
-            Navigator.pop(context);
-           }
+            resetApp();
 
-           showDialog(
-             context: context,
-             barrierDismissible: false,
-             builder: (BuildContext c) => AlertDialog(
-               backgroundColor: const Color(0xFF181820),
-               title: const Text(
-                 "Ride Cancelled",
-                 style: TextStyle(color: Colors.white),
-               ),
-               content: const Text(
-                 "The Driver has cancelled the Ride. Please request another Ride.",
-                 style: TextStyle(color: Colors.white70),
-               ),
-               actions: [
-                 TextButton(
-                   onPressed: () {
-                     Navigator.pop(c);
-                   },
-                   child: const Text(
-                     "OK",
-                     style: TextStyle(color: Colors.white),
-                   ),
-                 ),
-               ],
-             ),
-           );
+            // Close any open dialogs
+            if (Navigator.canPop(context)) {
+              Navigator.pop(context);
+            }
+
+            showDialog(
+              context: context,
+              barrierDismissible: false,
+              builder: (BuildContext c) => AlertDialog(
+                backgroundColor: const Color(0xFF181820),
+                title: const Text(
+                  "Ride Cancelled",
+                  style: TextStyle(color: Colors.white),
+                ),
+                content: const Text(
+                  "The Driver has cancelled the Ride. Please request another Ride.",
+                  style: TextStyle(color: Colors.white70),
+                ),
+                actions: [
+                  TextButton(
+                    onPressed: () {
+                      Navigator.pop(c);
+                    },
+                    child: const Text(
+                      "OK",
+                      style: TextStyle(color: Colors.white),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
         }
       }
     });
@@ -452,7 +523,10 @@ class _HomePageState extends State<HomePage> {
                         FirebaseFirestore.instance
                             .collection("rideRequests")
                             .doc(currentRideRequestId)
-                            .delete();
+                            .update({
+                          "status": "cancelled",
+                          "cancelled_by": "rider",
+                        });
                         cMethods.displaySnackBar("Request Cancelled", context);
                       },
                       style: ElevatedButton.styleFrom(
@@ -518,7 +592,8 @@ class _HomePageState extends State<HomePage> {
 
   getCurrentLiveLocationOfUser() async {
     Position positionOfUser = await Geolocator.getCurrentPosition(
-        desiredAccuracy: LocationAccuracy.bestForNavigation);
+        locationSettings: const LocationSettings(
+            accuracy: LocationAccuracy.bestForNavigation));
     currentPositionOfUser = positionOfUser;
 
     LatLng positionOfUserInLatLng = LatLng(
@@ -574,6 +649,54 @@ class _HomePageState extends State<HomePage> {
       Navigator.push(
           context, MaterialPageRoute(builder: (c) => const LoginScreen()));
     }
+  }
+
+  void createMarkerIcon() {
+    if (carMarkerIcon == null) {
+      ImageConfiguration imageConfiguration =
+          createLocalImageConfiguration(context, size: const Size(2, 2));
+      BitmapDescriptor.asset(imageConfiguration, "assets/images/tracking.png")
+          .then((icon) {
+        carMarkerIcon = icon;
+      });
+    }
+  }
+
+  void listenToDriverLocation(String driverId) {
+    driverLocationSubscription = FirebaseFirestore.instance
+        .collection("online_drivers")
+        .doc(driverId)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.exists) {
+        if (!mounted) return;
+        var driverPosition = snapshot.data()?["position"];
+        if (driverPosition != null) {
+          double driverLat = driverPosition["geopoint"].latitude;
+          double driverLng = driverPosition["geopoint"].longitude;
+          LatLng driverLatLng = LatLng(driverLat, driverLng);
+
+          Marker driverMarker = Marker(
+            markerId: const MarkerId("driverMarker"),
+            position: driverLatLng,
+            icon: carMarkerIcon ??
+                BitmapDescriptor.defaultMarkerWithHue(
+                    BitmapDescriptor.hueViolet),
+            infoWindow: const InfoWindow(title: "Your Driver"),
+          );
+
+          setState(() {
+            markersSet.removeWhere(
+                (marker) => marker.markerId.value == "driverMarker");
+            markersSet.add(driverMarker);
+          });
+
+          // Animate camera to follow driver if needed
+          controllerGoogleMap
+              ?.animateCamera(CameraUpdate.newLatLng(driverLatLng));
+        }
+      }
+    });
   }
 
   @override
@@ -930,33 +1053,34 @@ class _HomePageState extends State<HomePage> {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         Text(
-                          "Driver Arriving",
+                          rideStatusText,
                           style: GoogleFonts.poppins(
                             fontSize: 20,
                             color: _textColor,
                             fontWeight: FontWeight.w600,
                           ),
                         ),
-                        // Small OTP Badge
-                        Container(
-                            padding: const EdgeInsets.symmetric(
-                                horizontal: 12, vertical: 6),
-                            decoration: BoxDecoration(
-                                color: _accentColor.withOpacity(0.2),
-                                borderRadius: BorderRadius.circular(20),
-                                border: Border.all(color: _accentColor)),
-                            child: Row(
-                              children: [
-                                Text("OTP: ",
-                                    style: GoogleFonts.poppins(
-                                        color: Colors.white70, fontSize: 12)),
-                                Text(rideOtp,
-                                    style: GoogleFonts.poppins(
-                                        color: _textColor,
-                                        fontSize: 16,
-                                        fontWeight: FontWeight.bold)),
-                              ],
-                            ))
+                        // Small OTP Badge - Only show if trip hasn't started
+                        if (!isTripStarted)
+                          Container(
+                              padding: const EdgeInsets.symmetric(
+                                  horizontal: 12, vertical: 6),
+                              decoration: BoxDecoration(
+                                  color: _accentColor.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                  border: Border.all(color: _accentColor)),
+                              child: Row(
+                                children: [
+                                  Text("OTP: ",
+                                      style: GoogleFonts.poppins(
+                                          color: Colors.white70, fontSize: 12)),
+                                  Text(rideOtp,
+                                      style: GoogleFonts.poppins(
+                                          color: _textColor,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold)),
+                                ],
+                              ))
                       ],
                     ),
                     const SizedBox(height: 20),
@@ -996,28 +1120,76 @@ class _HomePageState extends State<HomePage> {
                               ],
                             ),
                           ),
-
-                          // Call Button
-                          Container(
-                            decoration: const BoxDecoration(
-                              color: Colors.green,
-                              shape: BoxShape.circle,
-                            ),
-                            child: IconButton(
-                              onPressed: () {
-                                if (driverPhone.isNotEmpty) {
-                                  launchUrl(Uri.parse("tel://$driverPhone"));
-                                } else {
-                                  cMethods.displaySnackBar(
-                                      "Phone number not available", context);
-                                }
-                              },
-                              icon:
-                                  const Icon(Icons.phone, color: Colors.white),
-                            ),
-                          )
                         ],
                       ),
+                    ),
+
+                    const SizedBox(height: 20),
+
+                    // Chat & Call Buttons
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                      children: [
+                        // Chat Button
+                        GestureDetector(
+                          onTap: () {
+                            Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                    builder: (c) => ChatScreen(
+                                        rideRequestId: currentRideRequestId,
+                                        otherUserName: driverName)));
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
+                            decoration: BoxDecoration(
+                                color: Colors.blue,
+                                borderRadius: BorderRadius.circular(50)),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.chat_bubble,
+                                    color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                Text("Chat",
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ),
+
+                        // Call Button
+                        GestureDetector(
+                          onTap: () {
+                            if (driverPhone.isNotEmpty) {
+                              launchUrl(Uri.parse("tel://$driverPhone"));
+                            } else {
+                              cMethods.displaySnackBar(
+                                  "Phone number not available", context);
+                            }
+                          },
+                          child: Container(
+                            padding: const EdgeInsets.symmetric(
+                                horizontal: 20, vertical: 10),
+                            decoration: BoxDecoration(
+                                color: Colors.green,
+                                borderRadius: BorderRadius.circular(50)),
+                            child: Row(
+                              children: [
+                                const Icon(Icons.phone,
+                                    color: Colors.white, size: 20),
+                                const SizedBox(width: 8),
+                                Text("Call",
+                                    style: GoogleFonts.poppins(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600)),
+                              ],
+                            ),
+                          ),
+                        ),
+                      ],
                     ),
 
                     const SizedBox(height: 20),
@@ -1049,6 +1221,7 @@ class _HomePageState extends State<HomePage> {
                                         .doc(currentRideRequestId)
                                         .update({
                                       "status": "cancelled",
+                                      "cancelled_by": "rider",
                                     });
 
                                     // 2. Reset UI
@@ -1062,6 +1235,7 @@ class _HomePageState extends State<HomePage> {
                                       pLineCoOrdinatesList.clear();
                                       tripDirectionDetails =
                                           null; // Clear details
+                                      isTripStarted = false;
                                     });
 
                                     cMethods.displaySnackBar(
@@ -1101,5 +1275,24 @@ class _HomePageState extends State<HomePage> {
         ],
       ),
     );
+  }
+
+  void resetApp() {
+    setState(() {
+      searchContainerHeight = 276;
+      tripDetailsContainerHeight = 0;
+      driverDetailsContainerHeight = 0;
+      bottomMapPadding = 300;
+      polylineSet.clear();
+      markersSet.clear();
+      circlesSet.clear();
+      pLineCoOrdinatesList.clear();
+      tripDirectionDetails = null;
+      currentRideRequestId = "";
+      isTripStarted = false;
+      driverLocationSubscription?.cancel();
+      driverLocationSubscription = null;
+      carMarkerIcon = null;
+    });
   }
 }

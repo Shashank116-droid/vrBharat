@@ -13,6 +13,7 @@ import 'package:geoflutterfire2/geoflutterfire2.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:jinete_driver_app/pages/chat_screen.dart'; // Added
 import 'package:jinete_driver_app/global/global_var.dart';
 import 'package:jinete_driver_app/methods/common_methods.dart';
 import 'package:jinete_driver_app/push_notification/push_notification_system.dart';
@@ -28,7 +29,10 @@ class HomePage extends StatefulWidget {
   State<HomePage> createState() => _HomePageState();
 }
 
-class _HomePageState extends State<HomePage> {
+class _HomePageState extends State<HomePage>
+    with AutomaticKeepAliveClientMixin {
+  @override
+  bool get wantKeepAlive => true;
   final Completer<GoogleMapController> googleMapCompleterController =
       Completer<GoogleMapController>();
   GoogleMapController? controllerGoogleMap;
@@ -68,7 +72,16 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
+    PushNotificationSystem.initializeNotification();
     getUserInfo();
+  }
+
+  @override
+  void dispose() {
+    activeTripSubscription?.cancel();
+    rideRequestSubscription?.cancel();
+    positionStreamHomePage?.cancel();
+    super.dispose();
   }
 
   void getUserInfo() {
@@ -129,6 +142,7 @@ class _HomePageState extends State<HomePage> {
   }
 
   StreamSubscription? rideRequestSubscription;
+  StreamSubscription? activeTripSubscription;
   final geo = GeoFlutterFire();
 
   driverIsOnlineNow() async {
@@ -164,94 +178,222 @@ class _HomePageState extends State<HomePage> {
   }
 
   void checkActiveTrip() {
-    FirebaseFirestore.instance
+    activeTripSubscription = FirebaseFirestore.instance
         .collection("rideRequests")
         .where("driver_id", isEqualTo: FirebaseAuth.instance.currentUser!.uid)
-        .where("status", whereIn: ["accepted", "arrived", "ontrip"])
         .snapshots()
         .listen((event) {
           if (event.docs.isNotEmpty) {
-            var doc = event.docs[0];
+            QueryDocumentSnapshot? doc;
 
-            // Extract coordinates
-            LatLng? pLatLng;
-            LatLng? dLatLng;
+            // 1. Prioritize Active Trips
+            var activeDocs = event.docs.where((d) {
+              return ["accepted", "arrived", "ontrip"].contains(d["status"]);
+            }).toList();
 
-            try {
-              if (doc.data().containsKey("pickup")) {
-                var p = doc["pickup"];
-                pLatLng = LatLng(
-                  double.parse(p["latitude"].toString()),
-                  double.parse(p["longitude"].toString()),
-                );
+            if (activeDocs.isNotEmpty) {
+              doc = activeDocs[0];
+            } else if (activeRideRequestId.isNotEmpty) {
+              // 2. Only Check for Cancelled if we are currently tracking a ride
+              var currentRideDocs = event.docs
+                  .where(
+                    (d) =>
+                        d.id == activeRideRequestId &&
+                        d["status"] == "cancelled",
+                  )
+                  .toList();
+              if (currentRideDocs.isNotEmpty) {
+                doc = currentRideDocs[0];
               }
-              if (doc.data().containsKey("dropoff")) {
-                var d = doc["dropoff"];
-                dLatLng = LatLng(
-                  double.parse(d["latitude"].toString()),
-                  double.parse(d["longitude"].toString()),
-                );
-              }
-            } catch (e) {
-              print("Error parsing coordinates: $e");
             }
 
-            // Draw route if not already drawn or if request changed
-            // Draw route if not already drawn or if request changed
-            if (activeRideRequestId != doc.id &&
-                pLatLng != null &&
-                dLatLng != null) {
-              // New ride detected, fetch route
-              retrieveDirectionDetails(pLatLng, dLatLng);
+            if (doc != null) {
+              // Logic for Active or Cancelled Trip
+              print(
+                "DEBUG: Active Trip found: ${doc.id}, Status: ${doc["status"]}",
+              );
+
+              // Extract Coordinates
+              LatLng? pLatLng;
+              LatLng? dLatLng;
+              try {
+                if (doc.data().toString().contains("pickup") &&
+                    (doc["pickup"] is Map)) {
+                  var p = doc["pickup"];
+                  pLatLng = LatLng(
+                    double.parse(p["latitude"].toString()),
+                    double.parse(p["longitude"].toString()),
+                  );
+                }
+                if (doc.data().toString().contains("dropoff") &&
+                    (doc["dropoff"] is Map)) {
+                  var d = doc["dropoff"];
+                  dLatLng = LatLng(
+                    double.parse(d["latitude"].toString()),
+                    double.parse(d["longitude"].toString()),
+                  );
+                }
+              } catch (e) {
+                print("Error parsing coords: $e");
+              }
+
+              // Route Logic
+              bool activeTripRequestCanceled = (doc["status"] == "cancelled");
+              String newRideStatus = doc["status"];
+
+              if (!activeTripRequestCanceled &&
+                  pLatLng != null &&
+                  dLatLng != null) {
+                // Determine if we should update the route
+                // Update if:
+                // 1. It's a new ride (ID changed)
+                // 2. Status changed (e.g. accepted -> ontrip)
+                if (activeRideRequestId != doc.id ||
+                    activeRideStatus != newRideStatus) {
+                  LatLng? originLat;
+                  LatLng? destinationLat;
+                  String? originTitle;
+                  String? destinationTitle;
+
+                  if (newRideStatus == "accepted" ||
+                      newRideStatus == "arrived") {
+                    // Driver -> Pickup
+                    if (currentPositionOfUser != null) {
+                      originLat = LatLng(
+                        currentPositionOfUser!.latitude,
+                        currentPositionOfUser!.longitude,
+                      );
+                      destinationLat = pLatLng;
+                      originTitle = "My Location";
+                      destinationTitle = "Pickup Location";
+                    } else {
+                      // Fallback if current location unknown: Route Pickup -> Dropoff as overview
+                      // originLat = pLatLng;
+                      // destinationLat = dLatLng;
+                      // originTitle = "Pickup Location";
+                      // destinationTitle = "Dropoff Location";
+                    }
+                  } else if (newRideStatus == "ontrip") {
+                    // Pickup -> Dropoff (Standard View)
+                    originLat = pLatLng;
+                    destinationLat = dLatLng;
+                    originTitle = "Pickup Location";
+                    destinationTitle = "Dropoff Location";
+                  }
+
+                  if (originLat != null && destinationLat != null) {
+                    retrieveDirectionDetails(
+                      originLat,
+                      destinationLat,
+                      originTitle!,
+                      destinationTitle!,
+                    );
+                  }
+                }
+              }
+
+              setState(() {
+                activeRideRequestId = doc!.id;
+                activeRideStatus = doc["status"];
+                activeRideOtp = (doc.data() as Map).containsKey("otp")
+                    ? (doc["otp"] ?? "")
+                    : "";
+                pickupLatLng = pLatLng;
+                dropoffLatLng = dLatLng;
+
+                riderName = (doc.data() as Map).containsKey("rider_name")
+                    ? doc["rider_name"]
+                    : "Rider";
+                riderPhone = (doc.data() as Map).containsKey("rider_phone")
+                    ? doc["rider_phone"]
+                    : "";
+                riderCollege =
+                    ((doc.data() as Map).containsKey("rider_college") &&
+                        doc["rider_college"] != null)
+                    ? doc["rider_college"]
+                    : "College Info Unavailable";
+                pickupAddress =
+                    (doc.data() as Map).containsKey("pickup_address")
+                    ? doc["pickup_address"]
+                    : "";
+                dropOffAddress =
+                    (doc.data() as Map).containsKey("dropoff_address")
+                    ? doc["dropoff_address"]
+                    : "";
+
+                bottomSheetHeight = 320;
+              });
+
+              // Handle Cancellation Specifics
+              if (doc["status"] == "cancelled") {
+                String cancelledBy =
+                    (doc.data() as Map).containsKey("cancelled_by")
+                    ? doc["cancelled_by"]
+                    : "";
+
+                print("DEBUG: Trip Cancelled. CancelledBy: $cancelledBy");
+
+                if (cancelledBy == "rider") {
+                  print(
+                    "DEBUG: Showing Notification/Dialog for Rider Cancellation",
+                  );
+
+                  // 1. Local Notification
+                  PushNotificationSystem.showNotification(
+                    "Trip Cancelled",
+                    "The Passenger has cancelled the trip.",
+                  );
+
+                  // 2. Dialog (Ensure visibility)
+                  if (context.mounted) {
+                    showDialog(
+                      context: context,
+                      barrierDismissible: false,
+                      builder: (BuildContext c) => AlertDialog(
+                        title: const Text("Trip Cancelled"),
+                        content: const Text(
+                          "The Passenger has cancelled the trip.",
+                        ),
+                        actions: [
+                          TextButton(
+                            onPressed: () {
+                              Navigator.pop(c);
+                            },
+                            child: const Text("OK"),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                }
+                _resetToIdle();
+              }
+            } else {
+              _resetToIdle();
             }
-
-            setState(() {
-              activeRideRequestId = doc.id;
-              activeRideStatus = doc["status"];
-              activeRideOtp = doc.data().containsKey("otp")
-                  ? (doc["otp"] ?? "")
-                  : "";
-              pickupLatLng = pLatLng;
-              dropoffLatLng = dLatLng;
-
-              riderName = doc.data().containsKey("rider_name")
-                  ? doc["rider_name"]
-                  : "Rider";
-              riderPhone = doc.data().containsKey("rider_phone")
-                  ? doc["rider_phone"]
-                  : "";
-              riderCollege =
-                  (doc.data().containsKey("rider_college") &&
-                      doc["rider_college"] != null &&
-                      doc["rider_college"].toString().isNotEmpty)
-                  ? doc["rider_college"]
-                  : "College Info Unavailable";
-              pickupAddress = doc.data().containsKey("pickup_address")
-                  ? doc["pickup_address"]
-                  : "";
-              dropOffAddress = doc.data().containsKey("dropoff_address")
-                  ? doc["dropoff_address"]
-                  : "";
-
-              bottomSheetHeight = 320; // Expand for Trip Details
-            });
           } else {
-            setState(() {
-              activeRideRequestId = "";
-              activeRideStatus = "idle";
-              bottomSheetHeight = 120; // Low height for "Waiting"
-              polylineSet.clear();
-              markersSet.clear();
-              circlesSet.clear();
-              pLineCoOrdinatesList.clear();
-            });
+            _resetToIdle();
           }
         });
+  }
+
+  void _resetToIdle() {
+    setState(() {
+      activeRideRequestId = "";
+      activeRideStatus = "idle";
+      bottomSheetHeight = 120;
+      polylineSet.clear();
+      markersSet.clear();
+      circlesSet.clear();
+      pLineCoOrdinatesList.clear();
+    });
   }
 
   retrieveDirectionDetails(
     LatLng originLatLng,
     LatLng destinationLatLng,
+    String originTitle,
+    String destinationTitle,
   ) async {
     var details = await CommonMethods.getDirectionDetails(
       originLatLng,
@@ -264,8 +406,8 @@ class _HomePageState extends State<HomePage> {
       tripDirectionDetails = details;
     });
 
-    List<PointLatLng> decodedPolylinePointsResult =
-        PolylinePoints.decodePolyline(tripDirectionDetails!.encodedPoints!);
+    List<PointLatLng> decodedPolylinePointsResult = PolylinePoints()
+        .decodePolyline(tripDirectionDetails!.encodedPoints!);
 
     pLineCoOrdinatesList.clear();
 
@@ -293,49 +435,43 @@ class _HomePageState extends State<HomePage> {
 
       polylineSet.add(polyline);
 
-      Marker pickUpMarker = Marker(
-        markerId: const MarkerId("pickUpID"),
+      Marker originMarker = Marker(
+        markerId: const MarkerId("originID"),
         position: originLatLng,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
-        infoWindow: const InfoWindow(
-          title: "Pickup Location",
-          snippet: "Client Location",
-        ),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueYellow),
+        infoWindow: InfoWindow(title: originTitle, snippet: "Origin"),
       );
 
-      Marker dropOffMarker = Marker(
-        markerId: const MarkerId("dropOffID"),
+      Marker destinationMarker = Marker(
+        markerId: const MarkerId("destinationID"),
         position: destinationLatLng,
-        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
-        infoWindow: const InfoWindow(
-          title: "Dropoff Location",
-          snippet: "Destination",
-        ),
+        icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueOrange),
+        infoWindow: InfoWindow(title: destinationTitle, snippet: "Destination"),
       );
 
-      markersSet.add(pickUpMarker);
-      markersSet.add(dropOffMarker);
+      markersSet.add(originMarker);
+      markersSet.add(destinationMarker);
 
-      Circle pickUpCircle = Circle(
-        circleId: const CircleId("pickUpID"),
-        strokeColor: Colors.orange,
+      Circle originCircle = Circle(
+        circleId: const CircleId("originID"),
+        strokeColor: Colors.yellow,
         strokeWidth: 4,
         radius: 12,
         center: originLatLng,
-        fillColor: Colors.orangeAccent,
+        fillColor: Colors.yellowAccent,
       );
 
-      Circle dropOffCircle = Circle(
-        circleId: const CircleId("dropOffID"),
-        strokeColor: Colors.green,
+      Circle destinationCircle = Circle(
+        circleId: const CircleId("destinationID"),
+        strokeColor: Colors.orange,
         strokeWidth: 4,
         radius: 12,
         center: destinationLatLng,
-        fillColor: Colors.greenAccent,
+        fillColor: Colors.orangeAccent,
       );
 
-      circlesSet.add(pickUpCircle);
-      circlesSet.add(dropOffCircle);
+      circlesSet.add(originCircle);
+      circlesSet.add(destinationCircle);
     });
 
     // Fit map to bounds
@@ -410,6 +546,7 @@ class _HomePageState extends State<HomePage> {
 
   @override
   Widget build(BuildContext context) {
+    super.build(context);
     return Scaffold(
       body: Stack(
         children: [
@@ -578,6 +715,32 @@ class _HomePageState extends State<HomePage> {
                               ),
                             ),
 
+                            // Chat Button
+                            Container(
+                              decoration: const BoxDecoration(
+                                color: Colors.blueAccent,
+                                shape: BoxShape.circle,
+                              ),
+                              child: IconButton(
+                                onPressed: () {
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (c) => ChatScreen(
+                                        rideRequestId: activeRideRequestId,
+                                        otherUserName: riderName,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                icon: const Icon(
+                                  Icons.chat_bubble,
+                                  color: Colors.white,
+                                ),
+                              ),
+                            ),
+                            const SizedBox(width: 10),
+
                             // Navigation Button
                             Container(
                               decoration: const BoxDecoration(
@@ -732,7 +895,10 @@ class _HomePageState extends State<HomePage> {
                                           FirebaseFirestore.instance
                                               .collection("rideRequests")
                                               .doc(activeRideRequestId)
-                                              .update({"status": "cancelled"});
+                                              .update({
+                                                "status": "cancelled",
+                                                "cancelled_by": "driver",
+                                              });
                                         },
                                         child: const Text(
                                           "Yes",

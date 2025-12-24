@@ -9,7 +9,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
-        android:label="jinete_driver_app"
+        android:label="Jinete Driver"
         android:name="${applicationName}"
         android:icon="@mipmap/launcher_icon">
         <activity
@@ -40,7 +40,7 @@
             android:name="flutterEmbedding"
             android:value="2" />
             <meta-data android:name="com.google.android.geo.API_KEY"
-               android:value="AIzaSyCBtIrXPJjIwhYfThKC7UJjbcwojWDjbzA"/>
+               android:value="AIzaSyD3UctxwKhhtJULR3_wRQYcEzp7FVaMlt8"/>
 
     </application>
 </manifest>

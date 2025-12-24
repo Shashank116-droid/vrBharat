@@ -47,22 +47,22 @@ class DefaultFirebaseOptions {
   }
 
   static const FirebaseOptions android = FirebaseOptions(
-    apiKey: 'AIzaSyD4gfqeC-D3kGSbNUmHYF8xdSCPPFEzT6I',
-    appId: '1:623431021180:android:5dc907701c3d738d444ff9',
-    messagingSenderId: '623431021180',
-    projectId: 'jinete-user-app',
-    databaseURL: 'https://jinete-user-app-default-rtdb.firebaseio.com',
-    storageBucket: 'jinete-user-app.firebasestorage.app',
+    apiKey: 'AIzaSyA9tg_QiJy174vc2eRs5DfnZD0-354q6VM',
+    appId: '1:53262329474:android:3503debdf64fb9b0e5b69b',
+    messagingSenderId: '53262329474',
+    projectId: 'jineteapp-3f83c',
+    databaseURL: 'https://jineteapp-3f83c-default-rtdb.firebaseio.com',
+    storageBucket: 'jineteapp-3f83c.firebasestorage.app',
   );
 
   static const FirebaseOptions ios = FirebaseOptions(
-    apiKey: 'AIzaSyAjq3ZJa1RslNW-hQkB-xeEObkQOUwsXXA',
-    appId: '1:623431021180:ios:e1c91e95412d2e61444ff9',
-    messagingSenderId: '623431021180',
-    projectId: 'jinete-user-app',
-    databaseURL: 'https://jinete-user-app-default-rtdb.firebaseio.com',
-    storageBucket: 'jinete-user-app.firebasestorage.app',
-    iosBundleId: 'com.example.jineteDriverApp',
+    apiKey: 'AIzaSyBzAEWiJnBcXy494PYHLjb60kx9yYjujAk',
+    appId: '1:53262329474:ios:e56eff07dff4bb5ae5b69b',
+    messagingSenderId: '53262329474',
+    projectId: 'jineteapp-3f83c',
+    databaseURL: 'https://jineteapp-3f83c-default-rtdb.firebaseio.com',
+    storageBucket: 'jineteapp-3f83c.firebasestorage.app',
+    iosBundleId: 'com.vrbharat.jineteDriverApp',
   );
 
   static const FirebaseOptions web = FirebaseOptions(

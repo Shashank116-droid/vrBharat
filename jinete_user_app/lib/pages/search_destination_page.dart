@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jinete/methods/common_methods.dart';
 import 'package:jinete/models/place_prediction.dart';
-import 'package:jinete/models/place_prediction.dart';
 import 'dart:async';
 
 class SearchDestinationPage extends StatefulWidget {
@@ -223,18 +222,17 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                         var lng = location["longitude"];
 
                         if (isPickupFocused) {
-                          // Update Pickup
+                          // ... (Keep existing logic)
                           setState(() {
                             pickUpTextEditingController.text =
                                 placePredictionList[index].mainText!;
                             pickupLat = lat;
                             pickupLng = lng;
-                            placePredictionList.clear(); // Clear list or keep?
+                            placePredictionList.clear();
                           });
-                          // Move focus to dropoff
                           dropOffFocusNode.requestFocus();
                         } else {
-                          // Update Dropoff and Return
+                          // ... (Keep existing logic)
                           setState(() {
                             dropOffTextEditingController.text =
                                 placePredictionList[index].mainText!;
@@ -242,12 +240,10 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                             dropoffLng = lng;
                           });
 
-                          // Prepare Result Map
                           Map<String, dynamic> responseMap = {
-                            "img": "ignored", // legacy
+                            "img": "ignored",
                           };
 
-                          // Add Pickup (if modified)
                           if (pickupLat != null && pickupLng != null) {
                             responseMap["pickup"] = {
                               "lat": pickupLat,
@@ -256,7 +252,6 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                             };
                           }
 
-                          // Add Dropoff
                           if (dropoffLat != null && dropoffLng != null) {
                             responseMap["dropoff"] = {
                               "lat": dropoffLat,
@@ -264,9 +259,11 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                               "address": dropOffTextEditingController.text,
                             };
                           }
-
                           Navigator.pop(context, responseMap);
                         }
+                      } else {
+                        print(
+                            "DEBUG: details returned NULL from getPlaceDetails");
                       }
                     },
                     child: PlacePredictionTileDesign(

@@ -1,5 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
-<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.vrbharat.jinete_user_app">
 
     <!-- Internet Permissions -->
     <uses-permission android:name="android.permission.INTERNET" />
@@ -9,7 +10,7 @@
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
 
     <application
-        android:label="jinete_user_app"
+        android:label="Jinete User"
         android:icon="@mipmap/launcher_icon"
         android:allowBackup="true"
         android:theme="@style/LaunchTheme"
@@ -43,7 +44,7 @@
             android:value="2" />
 
         <meta-data android:name="com.google.android.geo.API_KEY"
-               android:value="AIzaSyCBtIrXPJjIwhYfThKC7UJjbcwojWDjbzA"/>
+               android:value="AIzaSyD3UctxwKhhtJULR3_wRQYcEzp7FVaMlt8"/>
 
     </application>
 </manifest>

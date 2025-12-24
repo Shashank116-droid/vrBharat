@@ -16,7 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
+version: 1.0.2+2
 
 environment:
   sdk: ^3.10.1
@@ -26,26 +26,27 @@ dependencies:
   flutter:
     sdk: flutter
   provider: ^6.0.5
-  connectivity_plus: ^5.0.2
-  firebase_core: ^2.32.0
-  firebase_auth: ^4.20.0
-  cloud_firestore: ^4.17.5
+  connectivity_plus: ^6.1.0
+  firebase_core: ^3.6.0
+  firebase_auth: ^5.3.1
+  cloud_firestore: ^5.4.4
 
-  firebase_storage:
-  google_maps_flutter: ^2.14.0
+  firebase_storage: ^12.3.0
+  google_maps_flutter: ^2.10.0
   google_fonts: ^6.3.3
-  permission_handler: 
-  geolocator: ^12.0.0
+  permission_handler: ^11.3.1
+  geolocator: ^13.0.1
   image_picker:
   
-  cupertino_icons: ^1.0.8
+  cupertino_icons: ^1.0.2
   pinput: ^6.0.1
   geoflutterfire2: ^2.3.15
   geocoding: ^3.0.0
-  intl: ^0.20.2
+  intl: ^0.19.0
   flutter_ringtone_player: ^4.0.0+4
-  flutter_polyline_points: ^3.1.0
-  http: ^1.6.0
+  flutter_local_notifications: ^18.0.1
+  flutter_polyline_points: ^2.1.0
+  http: ^1.2.2
   url_launcher: ^6.3.2
 
 dev_dependencies:
@@ -54,6 +55,9 @@ dev_dependencies:
 
   flutter_lints: ^6.0.0
   flutter_launcher_icons: ^0.13.1
+
+dependency_overrides:
+  cloud_firestore: ^5.4.4
 
 flutter_launcher_icons:
   android: "launcher_icon"

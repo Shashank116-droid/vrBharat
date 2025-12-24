@@ -1,4 +1,4 @@
-package com.example.jinete_driver_app
+package com.vrbharat.jinete_driver_app
 
 import io.flutter.embedding.android.FlutterActivity
 

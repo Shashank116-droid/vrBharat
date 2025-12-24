@@ -1,25 +1,22 @@
 {
   "project_info": {
-    "project_number": "623431021180",
-    "firebase_url": "https://jinete-user-app-default-rtdb.firebaseio.com",
-    "project_id": "jinete-user-app",
-    "storage_bucket": "jinete-user-app.firebasestorage.app"
+    "project_number": "53262329474",
+    "firebase_url": "https://jineteapp-3f83c-default-rtdb.firebaseio.com",
+    "project_id": "jineteapp-3f83c",
+    "storage_bucket": "jineteapp-3f83c.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:623431021180:android:5dc907701c3d738d444ff9",
+        "mobilesdk_app_id": "1:53262329474:android:4645d4151b376a19e5b69b",
         "android_client_info": {
-          "package_name": "com.example.jinete_driver_app"
+          "package_name": "com.mycompany.Jinete"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyD4gfqeC-D3kGSbNUmHYF8xdSCPPFEzT6I"
-        },
-        {
-          "current_key": "AIzaSyCBtIrXPJjIwhYfThKC7UJjbcwojWDjbzA"
+          "current_key": "AIzaSyA9tg_QiJy174vc2eRs5DfnZD0-354q6VM"
         }
       ],
       "services": {
@@ -30,18 +27,53 @@
     },
     {
       "client_info": {
-        "mobilesdk_app_id": "1:623431021180:android:1f5bcdb5d905d194444ff9",
+        "mobilesdk_app_id": "1:53262329474:android:5633cdd3235beb38e5b69b",
         "android_client_info": {
-          "package_name": "com.example.jinete_user_app"
+          "package_name": "com.vrbharat.jinete"
         }
       },
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyD4gfqeC-D3kGSbNUmHYF8xdSCPPFEzT6I"
-        },
+          "current_key": "AIzaSyA9tg_QiJy174vc2eRs5DfnZD0-354q6VM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:53262329474:android:3503debdf64fb9b0e5b69b",
+        "android_client_info": {
+          "package_name": "com.vrbharat.jinete_driver_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
         {
-          "current_key": "AIzaSyCBtIrXPJjIwhYfThKC7UJjbcwojWDjbzA"
+          "current_key": "AIzaSyA9tg_QiJy174vc2eRs5DfnZD0-354q6VM"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    },
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:53262329474:android:95897e7bcd4274f3e5b69b",
+        "android_client_info": {
+          "package_name": "com.vrbharat.jinete_user_app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyA9tg_QiJy174vc2eRs5DfnZD0-354q6VM"
         }
       ],
       "services": {
