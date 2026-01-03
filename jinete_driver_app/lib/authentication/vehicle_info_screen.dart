@@ -1,10 +1,9 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
-// import 'package:firebase_database/firebase_database.dart'; // Removed
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 
-import 'package:jinete_driver_app/pages/dashboard.dart';
 import 'package:jinete_driver_app/widgets/loading_dialog.dart';
+import 'driver_document_upload_screen.dart';
 
 class VehicleInfoScreen extends StatefulWidget {
   final String driverId;
@@ -24,11 +23,29 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen> {
   final Color _accentColor = const Color(0xFFFF6B00);
   final Color _textColor = Colors.white;
   final Color _hintColor = Colors.white54;
+  final Color _inputColor = const Color(0xFF252530);
+
+  TextEditingController carModelController = TextEditingController();
+  TextEditingController carNumberController = TextEditingController();
+
+  
 
   void saveVehicleInfo() {
     if (selectedVehicleType == null) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text("Please select a vehicle type.")),
+      );
+      return;
+    }
+    if (carModelController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please provide Vehicle Model.")),
+      );
+      return;
+    }
+    if (carNumberController.text.trim().isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text("Please provide Vehicle Number.")),
       );
       return;
     }
@@ -41,7 +58,11 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen> {
     );
 
     // Save vehicle type and vehicle details structure
-    Map<String, Object> vehicleInfo = {"type": selectedVehicleType!};
+    Map<String, Object> vehicleInfo = {
+      "type": selectedVehicleType!,
+      "model": carModelController.text.trim(),
+      "number": carNumberController.text.trim(),
+    };
 
     FirebaseFirestore.instance
         .collection("drivers")
@@ -50,9 +71,13 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen> {
         .then((_) {
           if (context.mounted) {
             Navigator.pop(context); // Dismiss loading
+            // Navigate to Document Upload Screen
             Navigator.pushReplacement(
               context,
-              MaterialPageRoute(builder: (c) => const Dashboard()),
+              MaterialPageRoute(
+                builder: (c) =>
+                    DriverDocumentUploadScreen(driverId: widget.driverId),
+              ),
             );
           }
         })
@@ -153,6 +178,50 @@ class _VehicleInfoScreenState extends State<VehicleInfoScreen> {
               _buildVehicleCard("Car", "", "Car"),
               _buildVehicleCard("Bike", "", "Bike"),
               _buildVehicleCard("Electric Vehicle", "", "Electric"),
+
+              const SizedBox(height: 30),
+
+              // Car Model Input
+              TextField(
+                controller: carModelController,
+                style: GoogleFonts.poppins(color: _textColor),
+                decoration: InputDecoration(
+                  labelText: "Vehicle Model",
+                  labelStyle: GoogleFonts.poppins(color: _hintColor),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: _hintColor),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: _accentColor),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: _inputColor,
+                ),
+              ),
+
+              const SizedBox(height: 20),
+
+              // Car Number Input
+              TextField(
+                controller: carNumberController,
+                style: GoogleFonts.poppins(color: _textColor),
+                decoration: InputDecoration(
+                  labelText: "License Plate Number",
+                  labelStyle: GoogleFonts.poppins(color: _hintColor),
+                  enabledBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: _hintColor),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  focusedBorder: OutlineInputBorder(
+                    borderSide: BorderSide(color: _accentColor),
+                    borderRadius: BorderRadius.circular(10),
+                  ),
+                  filled: true,
+                  fillColor: _inputColor,
+                ),
+              ),
 
               const Spacer(),
 

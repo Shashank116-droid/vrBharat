@@ -1,6 +1,5 @@
 import 'dart:convert';
-import 'dart:async'; // Added for StreamSubscription
-// import 'dart:typed_data'; // Unnecessary
+import 'dart:async';
 
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -13,14 +12,12 @@ import 'package:geoflutterfire2/geoflutterfire2.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
-import 'package:jinete_driver_app/pages/chat_screen.dart'; // Added
+import 'package:jinete_driver_app/pages/chat_screen.dart';
 import 'package:jinete_driver_app/global/global_var.dart';
 import 'package:jinete_driver_app/methods/common_methods.dart';
 import 'package:jinete_driver_app/push_notification/push_notification_system.dart';
-
+import 'package:qr_flutter/qr_flutter.dart';
 import 'package:url_launcher/url_launcher.dart';
-
-// import '../widgets/custom_drawer.dart';
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -42,6 +39,7 @@ class _HomePageState extends State<HomePage>
   bool isDriverActive = true;
   String driverName = "";
   String driverPhone = "";
+  String verificationStatus = "pending";
 
   StreamSubscription<Position>? positionStreamHomePage;
 
@@ -64,9 +62,7 @@ class _HomePageState extends State<HomePage>
   LatLng? pickupLatLng;
   LatLng? dropoffLatLng;
 
-  // UI Logic: tripPanelHeight is now effectively always visible (different states)
-  // We will control content visibility instead of height generally, OR use height to animate hidden/shown.
-  // User wants a PERSISTENT bar "Waiting for rides".
+  // Persistent bar height
   double bottomSheetHeight = 220;
 
   @override
@@ -94,7 +90,19 @@ class _HomePageState extends State<HomePage>
             setState(() {
               driverName = (docSnapshot.data() as Map)["name"];
               driverPhone = (docSnapshot.data() as Map)["phone"];
+              verificationStatus =
+                  (docSnapshot.data() as Map)["verificationStatus"] ??
+                  "pending";
             });
+
+            if (verificationStatus == "approved") {
+              // If approved, trigger online status (if map ready)
+              // We can check if controller is ready or just call it,
+              // but safer to wait for map or if map is already ready.
+              if (controllerGoogleMap != null) {
+                driverIsOnlineNow();
+              }
+            }
           }
         });
   }
@@ -137,7 +145,7 @@ class _HomePageState extends State<HomePage>
       CameraUpdate.newCameraPosition(cameraPosition),
     );
 
-    // Auto-Online when map is ready and location is found
+    // Initial check
     driverIsOnlineNow();
   }
 
@@ -146,6 +154,11 @@ class _HomePageState extends State<HomePage>
   final geo = GeoFlutterFire();
 
   driverIsOnlineNow() async {
+    // SECURITY CHECK: Verify Status
+    if (verificationStatus != "approved") {
+      return;
+    }
+
     // 1. Get current position
     Position pos = await Geolocator.getCurrentPosition(
       desiredAccuracy: LocationAccuracy.high,
@@ -208,11 +221,6 @@ class _HomePageState extends State<HomePage>
             }
 
             if (doc != null) {
-              // Logic for Active or Cancelled Trip
-              print(
-                "DEBUG: Active Trip found: ${doc.id}, Status: ${doc["status"]}",
-              );
-
               // Extract Coordinates
               LatLng? pLatLng;
               LatLng? dLatLng;
@@ -234,7 +242,7 @@ class _HomePageState extends State<HomePage>
                   );
                 }
               } catch (e) {
-                print("Error parsing coords: $e");
+                // print("Error parsing coords: $e");
               }
 
               // Route Logic
@@ -244,10 +252,6 @@ class _HomePageState extends State<HomePage>
               if (!activeTripRequestCanceled &&
                   pLatLng != null &&
                   dLatLng != null) {
-                // Determine if we should update the route
-                // Update if:
-                // 1. It's a new ride (ID changed)
-                // 2. Status changed (e.g. accepted -> ontrip)
                 if (activeRideRequestId != doc.id ||
                     activeRideStatus != newRideStatus) {
                   LatLng? originLat;
@@ -257,7 +261,6 @@ class _HomePageState extends State<HomePage>
 
                   if (newRideStatus == "accepted" ||
                       newRideStatus == "arrived") {
-                    // Driver -> Pickup
                     if (currentPositionOfUser != null) {
                       originLat = LatLng(
                         currentPositionOfUser!.latitude,
@@ -266,15 +269,8 @@ class _HomePageState extends State<HomePage>
                       destinationLat = pLatLng;
                       originTitle = "My Location";
                       destinationTitle = "Pickup Location";
-                    } else {
-                      // Fallback if current location unknown: Route Pickup -> Dropoff as overview
-                      // originLat = pLatLng;
-                      // destinationLat = dLatLng;
-                      // originTitle = "Pickup Location";
-                      // destinationTitle = "Dropoff Location";
                     }
                   } else if (newRideStatus == "ontrip") {
-                    // Pickup -> Dropoff (Standard View)
                     originLat = pLatLng;
                     destinationLat = dLatLng;
                     originTitle = "Pickup Location";
@@ -324,27 +320,17 @@ class _HomePageState extends State<HomePage>
                 bottomSheetHeight = 320;
               });
 
-              // Handle Cancellation Specifics
               if (doc["status"] == "cancelled") {
                 String cancelledBy =
                     (doc.data() as Map).containsKey("cancelled_by")
                     ? doc["cancelled_by"]
                     : "";
 
-                print("DEBUG: Trip Cancelled. CancelledBy: $cancelledBy");
-
                 if (cancelledBy == "rider") {
-                  print(
-                    "DEBUG: Showing Notification/Dialog for Rider Cancellation",
-                  );
-
-                  // 1. Local Notification
                   PushNotificationSystem.showNotification(
                     "Trip Cancelled",
                     "The Passenger has cancelled the trip.",
                   );
-
-                  // 2. Dialog (Ensure visibility)
                   if (context.mounted) {
                     showDialog(
                       context: context,
@@ -474,7 +460,6 @@ class _HomePageState extends State<HomePage>
       circlesSet.add(destinationCircle);
     });
 
-    // Fit map to bounds
     LatLngBounds bounds;
     if (originLatLng.latitude > destinationLatLng.latitude &&
         originLatLng.longitude > destinationLatLng.longitude) {
@@ -558,7 +543,7 @@ class _HomePageState extends State<HomePage>
             polylines: polylineSet,
             markers: markersSet,
             circles: circlesSet,
-            padding: const EdgeInsets.only(bottom: 240), // Adjust for panel
+            padding: const EdgeInsets.only(bottom: 240),
             onMapCreated: (GoogleMapController mapController) {
               controllerGoogleMap = mapController;
               updateMapTheme(controllerGoogleMap!);
@@ -566,9 +551,7 @@ class _HomePageState extends State<HomePage>
 
               getCurrentLiveLocationOfDriver();
             },
-            onTap: (LatLng latLng) {
-              // Route selection removed
-            },
+            onTap: (LatLng latLng) {},
           ),
 
           // Persistent Bottom Panel
@@ -581,346 +564,405 @@ class _HomePageState extends State<HomePage>
               decoration: BoxDecoration(
                 color: const Color(0xFF181820),
                 borderRadius: const BorderRadius.vertical(
-                  top: Radius.circular(20),
+                  top: Radius.circular(25),
                 ),
                 boxShadow: const [
                   BoxShadow(
                     color: Colors.black54,
-                    blurRadius: 10,
+                    blurRadius: 18,
+                    spreadRadius: 2,
                     offset: Offset(0, -5),
                   ),
                 ],
+                border: const Border(
+                  top: BorderSide(color: Colors.white12, width: 1),
+                ),
               ),
               child: Padding(
                 padding: const EdgeInsets.symmetric(
                   horizontal: 24,
                   vertical: 18,
                 ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    // --- IDLE STATE ---
-                    if (activeRideStatus == "idle" ||
-                        activeRideStatus == "") ...[
-                      Row(
-                        children: [
-                          const Icon(Icons.access_time, color: Colors.white60),
-                          const SizedBox(width: 12),
-                          Text(
-                            "Waiting for Rides...",
-                            style: GoogleFonts.poppins(
-                              color: Colors.white,
-                              fontSize: 18,
-                              fontWeight: FontWeight.w600,
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 10),
-                      const LinearProgressIndicator(
-                        color: Colors.green,
-                        backgroundColor: Colors.white10,
-                      ),
-                      const SizedBox(height: 10),
-                      Text(
-                        "Please stay online to receive trip requests.",
-                        style: GoogleFonts.poppins(
-                          color: Colors.white54,
-                          fontSize: 13,
-                        ),
-                      ),
-                    ],
-
-                    // --- TRIP STATE ---
-                    if (activeRideStatus != "idle" &&
-                        activeRideStatus != "") ...[
-                      // Header
-                      Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Text(
-                            activeRideStatus == "ontrip"
-                                ? "Heading to Destination"
-                                : "Picking Up Rider",
-                            style: GoogleFonts.poppins(
-                              color: Colors.greenAccent,
-                              fontSize: 14,
-                              fontWeight: FontWeight.bold,
-                            ),
-                          ),
-                          Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 10,
-                              vertical: 4,
-                            ),
-                            decoration: BoxDecoration(
-                              color: Colors.white10,
-                              borderRadius: BorderRadius.circular(20),
-                            ),
-                            child: Text(
-                              activeRideStatus.toUpperCase(),
-                              style: GoogleFonts.poppins(
-                                color: Colors.white70,
-                                fontSize: 10,
-                              ),
-                            ),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-
-                      // Rider Info Card
-                      Container(
-                        padding: const EdgeInsets.all(12),
-                        decoration: BoxDecoration(
-                          color: Colors.white10,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Row(
+                child: SingleChildScrollView(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      // --- VERIFICATION PENDING STATE ---
+                      if (verificationStatus != "approved") ...[
+                        Row(
                           children: [
-                            const CircleAvatar(
-                              radius: 24,
-                              backgroundColor: Colors.white10,
-                              child: Icon(Icons.person, color: Colors.white),
+                            const Icon(
+                              Icons.admin_panel_settings_outlined,
+                              color: Colors.orangeAccent,
                             ),
                             const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(
-                                    riderName,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white,
-                                      fontSize: 16,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  Text(
-                                    riderPhone,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                    ),
-                                  ),
-                                  Text(
-                                    riderCollege,
-                                    style: GoogleFonts.poppins(
-                                      color: Colors.white54,
-                                      fontSize: 12,
-                                      fontStyle: FontStyle.italic,
-                                    ),
-                                  ),
-                                ],
+                            Text(
+                              "Verification Pending",
+                              style: GoogleFonts.poppins(
+                                color: Colors.orangeAccent,
+                                fontSize: 18,
+                                fontWeight: FontWeight.w600,
                               ),
                             ),
-
-                            // Chat Button
-                            Container(
-                              decoration: const BoxDecoration(
-                                color: Colors.blueAccent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: IconButton(
-                                onPressed: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (c) => ChatScreen(
-                                        rideRequestId: activeRideRequestId,
-                                        otherUserName: riderName,
-                                      ),
-                                    ),
-                                  );
-                                },
-                                icon: const Icon(
-                                  Icons.chat_bubble,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // Navigation Button
-                            Container(
-                              decoration: const BoxDecoration(
-                                color: Colors.blueAccent,
-                                shape: BoxShape.circle,
-                              ),
-                              child: IconButton(
-                                onPressed: () {
-                                  double lat;
-                                  double lng;
-
-                                  if (activeRideStatus == "ontrip" &&
-                                      dropoffLatLng != null) {
-                                    lat = dropoffLatLng!.latitude;
-                                    lng = dropoffLatLng!.longitude;
-                                  } else if (pickupLatLng != null) {
-                                    lat = pickupLatLng!.latitude;
-                                    lng = pickupLatLng!.longitude;
-                                  } else {
-                                    return;
-                                  }
-
-                                  String googleMapUrl =
-                                      "google.navigation:q=$lat,$lng&mode=d";
-
-                                  print(
-                                    "DEBUG: Launching Google Maps Navigation: $googleMapUrl",
-                                  );
-
-                                  launchUrl(
-                                    Uri.parse(googleMapUrl),
-                                    mode: LaunchMode.externalApplication,
-                                  );
-                                },
-                                icon: const Icon(
-                                  Icons.map,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // Call Button
-                            Container(
-                              decoration: const BoxDecoration(
-                                color: Colors.green,
-                                shape: BoxShape.circle,
-                              ),
-                              child: IconButton(
-                                onPressed: () {
-                                  if (riderPhone.isNotEmpty) {
-                                    launchUrl(Uri.parse("tel://$riderPhone"));
-                                  }
-                                },
-                                icon: const Icon(
-                                  Icons.phone,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                            const SizedBox(width: 10),
-
-                            // Show OTP button if arrived but not verified
-                            if (activeRideStatus == "arrived")
-                              ElevatedButton(
-                                onPressed: () => showOtpDialog(),
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green,
-                                  shape: const CircleBorder(),
-                                  padding: const EdgeInsets.all(12),
-                                ),
-                                child: const Icon(
-                                  Icons.vpn_key,
-                                  color: Colors.white,
-                                  size: 20,
-                                ),
-                              ),
                           ],
                         ),
-                      ),
-
-                      const SizedBox(height: 16),
-
-                      // Action Button
-                      SizedBox(
-                        width: double.infinity,
-                        child: ElevatedButton(
-                          onPressed: () {
-                            if (activeRideStatus == "accepted") {
-                              FirebaseFirestore.instance
-                                  .collection("rideRequests")
-                                  .doc(activeRideRequestId)
-                                  .update({"status": "arrived"});
-                            } else if (activeRideStatus == "arrived") {
-                              // Also allow tapping main button to verify
-                              showOtpDialog();
-                            } else if (activeRideStatus == "ontrip") {
-                              FirebaseFirestore.instance
-                                  .collection("rideRequests")
-                                  .doc(activeRideRequestId)
-                                  .update({"status": "completed"});
-                            }
-                          },
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: activeRideStatus == "ontrip"
-                                ? Colors.redAccent
-                                : (activeRideStatus == "accepted"
-                                      ? Colors.orange
-                                      : Colors.green),
-                            padding: const EdgeInsets.symmetric(vertical: 14),
-                            shape: RoundedRectangleBorder(
-                              borderRadius: BorderRadius.circular(10),
-                            ),
-                          ),
-                          child: Text(
-                            activeRideStatus == "accepted"
-                                ? "Arrived at Pickup"
-                                : (activeRideStatus == "arrived"
-                                      ? "Enter OTP to Start"
-                                      : "End Trip"),
-                            style: GoogleFonts.poppins(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.white,
-                            ),
+                        const SizedBox(height: 10),
+                        const LinearProgressIndicator(
+                          color: Colors.orange,
+                          backgroundColor: Colors.white10,
+                        ),
+                        const SizedBox(height: 10),
+                        Text(
+                          "Your documents are under review. You cannot accept rides until verified by Admin.",
+                          style: GoogleFonts.poppins(
+                            color: Colors.white54,
+                            fontSize: 13,
                           ),
                         ),
-                      ),
+                      ] else ...[
+                        // --- IDLE STATE ---
+                        if (activeRideStatus == "idle" ||
+                            activeRideStatus == "") ...[
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.access_time,
+                                color: Colors.white60,
+                              ),
+                              const SizedBox(width: 12),
+                              Text(
+                                "Waiting for Rides...",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.white,
+                                  fontSize: 18,
+                                  fontWeight: FontWeight.w600,
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          const LinearProgressIndicator(
+                            color: Colors.green,
+                            backgroundColor: Colors.white10,
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            "Please stay online to receive trip requests.",
+                            style: GoogleFonts.poppins(
+                              color: Colors.white54,
+                              fontSize: 13,
+                            ),
+                          ),
+                        ],
 
-                      if (activeRideStatus == "accepted" ||
-                          activeRideStatus == "arrived")
-                        Padding(
-                          padding: const EdgeInsets.only(top: 10),
-                          child: Center(
-                            child: TextButton(
-                              onPressed: () {
-                                showDialog(
-                                  context: context,
-                                  builder: (context) => AlertDialog(
-                                    title: const Text("Cancel Trip"),
-                                    content: const Text(
-                                      "Are you sure you want to cancel this trip?",
-                                    ),
-                                    actions: [
-                                      TextButton(
-                                        onPressed: () => Navigator.pop(context),
-                                        child: const Text("No"),
+                        // --- TRIP STATE ---
+                        if (activeRideStatus != "idle" &&
+                            activeRideStatus != "") ...[
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Text(
+                                activeRideStatus == "ontrip"
+                                    ? "Heading to Destination"
+                                    : "Picking Up Rider",
+                                style: GoogleFonts.poppins(
+                                  color: Colors.greenAccent,
+                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                ),
+                              ),
+                              Container(
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                  vertical: 4,
+                                ),
+                                decoration: BoxDecoration(
+                                  color: Colors.white10,
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  activeRideStatus.toUpperCase(),
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white70,
+                                    fontSize: 10,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+
+                          Container(
+                            padding: const EdgeInsets.all(12),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withOpacity(0.05),
+                              borderRadius: BorderRadius.circular(16),
+                              border: Border.all(color: Colors.white12),
+                            ),
+                            child: Row(
+                              children: [
+                                const CircleAvatar(
+                                  radius: 24,
+                                  backgroundColor: Colors.white10,
+                                  child: Icon(
+                                    Icons.person,
+                                    color: Colors.white,
+                                  ),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment:
+                                        CrossAxisAlignment.start,
+                                    children: [
+                                      Text(
+                                        riderName,
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white,
+                                          fontSize: 16,
+                                          fontWeight: FontWeight.bold,
+                                        ),
                                       ),
-                                      TextButton(
-                                        onPressed: () {
-                                          Navigator.pop(context);
-                                          FirebaseFirestore.instance
-                                              .collection("rideRequests")
-                                              .doc(activeRideRequestId)
-                                              .update({
-                                                "status": "cancelled",
-                                                "cancelled_by": "driver",
-                                              });
-                                        },
-                                        child: const Text(
-                                          "Yes",
-                                          style: TextStyle(color: Colors.red),
+                                      Text(
+                                        riderPhone,
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white54,
+                                          fontSize: 12,
+                                        ),
+                                      ),
+                                      Text(
+                                        riderCollege,
+                                        style: GoogleFonts.poppins(
+                                          color: Colors.white54,
+                                          fontSize: 12,
+                                          fontStyle: FontStyle.italic,
                                         ),
                                       ),
                                     ],
                                   ),
-                                );
+                                ),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF2196F3),
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.blue.withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: IconButton(
+                                    onPressed: () {
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(
+                                          builder: (c) => ChatScreen(
+                                            rideRequestId: activeRideRequestId,
+                                            otherUserName: riderName,
+                                          ),
+                                        ),
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.chat_bubble,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: Colors.orange,
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.orange.withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: IconButton(
+                                    onPressed: () {
+                                      double lat;
+                                      double lng;
+
+                                      if (activeRideStatus == "ontrip" &&
+                                          dropoffLatLng != null) {
+                                        lat = dropoffLatLng!.latitude;
+                                        lng = dropoffLatLng!.longitude;
+                                      } else if (pickupLatLng != null) {
+                                        lat = pickupLatLng!.latitude;
+                                        lng = pickupLatLng!.longitude;
+                                      } else {
+                                        return;
+                                      }
+
+                                      String googleMapUrl =
+                                          "google.navigation:q=$lat,$lng&mode=d";
+
+                                      launchUrl(
+                                        Uri.parse(googleMapUrl),
+                                        mode: LaunchMode.externalApplication,
+                                      );
+                                    },
+                                    icon: const Icon(
+                                      Icons.map,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                Container(
+                                  decoration: BoxDecoration(
+                                    color: const Color(0xFF4CAF50),
+                                    shape: BoxShape.circle,
+                                    boxShadow: [
+                                      BoxShadow(
+                                        color: Colors.green.withOpacity(0.3),
+                                        blurRadius: 8,
+                                        offset: const Offset(0, 3),
+                                      ),
+                                    ],
+                                  ),
+                                  child: IconButton(
+                                    onPressed: () {
+                                      if (riderPhone.isNotEmpty) {
+                                        launchUrl(
+                                          Uri.parse("tel://$riderPhone"),
+                                        );
+                                      }
+                                    },
+                                    icon: const Icon(
+                                      Icons.phone,
+                                      color: Colors.white,
+                                    ),
+                                  ),
+                                ),
+                                const SizedBox(width: 10),
+                                if (activeRideStatus == "arrived")
+                                  ElevatedButton(
+                                    onPressed: () => showOtpDialog(),
+                                    style: ElevatedButton.styleFrom(
+                                      backgroundColor: Colors.green,
+                                      shape: const CircleBorder(),
+                                      padding: const EdgeInsets.all(12),
+                                    ),
+                                    child: const Icon(
+                                      Icons.vpn_key,
+                                      color: Colors.white,
+                                      size: 20,
+                                    ),
+                                  ),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(height: 16),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () {
+                                if (activeRideStatus == "accepted") {
+                                  FirebaseFirestore.instance
+                                      .collection("rideRequests")
+                                      .doc(activeRideRequestId)
+                                      .update({"status": "arrived"});
+                                } else if (activeRideStatus == "arrived") {
+                                  showOtpDialog();
+                                } else if (activeRideStatus == "ontrip") {
+                                  FirebaseFirestore.instance
+                                      .collection("rideRequests")
+                                      .doc(activeRideRequestId)
+                                      .update({"status": "ended"});
+                                  showPaymentDialog(activeRideRequestId);
+                                }
                               },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: activeRideStatus == "ontrip"
+                                    ? Colors.redAccent
+                                    : (activeRideStatus == "accepted"
+                                          ? Colors.orange
+                                          : Colors.green),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                                elevation: 8,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                              ),
                               child: Text(
-                                "Cancel Trip",
+                                activeRideStatus == "accepted"
+                                    ? "Arrived at Pickup"
+                                    : (activeRideStatus == "arrived"
+                                          ? "Enter OTP to Start"
+                                          : "End Trip"),
                                 style: GoogleFonts.poppins(
-                                  color: Colors.redAccent,
-                                  fontSize: 14,
+                                  fontWeight: FontWeight.bold,
+                                  fontSize: 16,
+                                  color: Colors.white,
                                 ),
                               ),
                             ),
                           ),
-                        ),
+                          if (activeRideStatus == "accepted" ||
+                              activeRideStatus == "arrived")
+                            Padding(
+                              padding: const EdgeInsets.only(top: 10),
+                              child: Center(
+                                child: TextButton(
+                                  onPressed: () {
+                                    showDialog(
+                                      context: context,
+                                      builder: (context) => AlertDialog(
+                                        title: const Text("Cancel Trip"),
+                                        content: const Text(
+                                          "Are you sure you want to cancel this trip?",
+                                        ),
+                                        actions: [
+                                          TextButton(
+                                            onPressed: () =>
+                                                Navigator.pop(context),
+                                            child: const Text("No"),
+                                          ),
+                                          TextButton(
+                                            onPressed: () {
+                                              Navigator.pop(context);
+                                              FirebaseFirestore.instance
+                                                  .collection("rideRequests")
+                                                  .doc(activeRideRequestId)
+                                                  .update({
+                                                    "status": "cancelled",
+                                                    "cancelled_by": "driver",
+                                                  });
+                                            },
+                                            child: const Text(
+                                              "Yes",
+                                              style: TextStyle(
+                                                color: Colors.red,
+                                              ),
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    );
+                                  },
+                                  child: Text(
+                                    "Cancel Trip",
+                                    style: GoogleFonts.poppins(
+                                      color: Colors.redAccent,
+                                      fontSize: 14,
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                        ],
+                      ],
                     ],
-                  ],
+                  ),
                 ),
               ),
             ),
@@ -972,6 +1014,168 @@ class _HomePageState extends State<HomePage>
           ),
         ],
       ),
+    );
+  }
+
+  void showPaymentDialog(String requestId) {
+    FirebaseFirestore.instance
+        .collection("rideRequests")
+        .doc(requestId)
+        .get()
+        .then((snap) {
+          if (!snap.exists) return;
+          String fare = (snap.data() as Map)["fare_offer"]?.toString() ?? "0";
+
+          showDialog(
+            context: context,
+            barrierDismissible: false,
+            builder: (context) => AlertDialog(
+              title: Center(child: Text("Collect Payment")),
+              content: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(
+                    "Total Amount",
+                    style: GoogleFonts.poppins(color: Colors.grey),
+                  ),
+                  Text(
+                    "₹$fare",
+                    style: GoogleFonts.poppins(
+                      fontSize: 32,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.green,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  Text("Select Payment Method:"),
+                  const SizedBox(height: 10),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (c) => AlertDialog(
+                                title: const Text("Cash Payment"),
+                                content: const Text(
+                                  "Please collect the cash from the passenger.",
+                                ),
+                                actions: [
+                                  ElevatedButton(
+                                    onPressed: () {
+                                      Navigator.pop(c);
+                                      endTrip(requestId, fare);
+                                    },
+                                    child: const Text("Collected"),
+                                  ),
+                                ],
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                          ),
+                          child: const Text("CASH"),
+                        ),
+                      ),
+                      const SizedBox(width: 10),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () {
+                            Navigator.pop(context);
+                            showDialog(
+                              context: context,
+                              barrierDismissible: false,
+                              builder: (c) => AlertDialog(
+                                content: Column(
+                                  mainAxisSize: MainAxisSize.min,
+                                  children: [
+                                    Text(
+                                      "Scan to Pay ₹$fare",
+                                      style: GoogleFonts.poppins(
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 10),
+                                    SizedBox(
+                                      height: 200,
+                                      width: 200,
+                                      child: QrImageView(
+                                        data:
+                                            "upi://pay?pa=driver@upi&pn=JineteDriver&am=$fare&cu=INR", // Mock UPI
+                                        version: QrVersions.auto,
+                                        size: 200.0,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 20),
+                                    ElevatedButton(
+                                      onPressed: () {
+                                        Navigator.pop(c);
+                                        endTrip(requestId, fare);
+                                      },
+                                      child: const Text("Payment Received"),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            );
+                          },
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.blue,
+                          ),
+                          child: const Text("UPI"),
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          );
+        });
+  }
+
+  void endTrip(String requestId, String fare) {
+    FirebaseFirestore.instance
+        .collection("rideRequests")
+        .doc(requestId)
+        .get()
+        .then((snap) {
+          if (snap.exists) {
+            var data = snap.data() as Map;
+
+            // 1. Create Trip Record
+            Map<String, dynamic> tripHistoryMap = {
+              "driverId": FirebaseAuth.instance.currentUser!.uid,
+              "riderId": data["rider_id"] ?? "",
+              "paymentAmount": fare,
+              "time": FieldValue.serverTimestamp(),
+              "status": "completed",
+              "pickupAddress": data["pickup_address"] ?? "",
+              "destinationAddress": data["dropoff_address"] ?? "",
+            };
+
+            FirebaseFirestore.instance.collection("trips").add(tripHistoryMap);
+
+            // 2. Mark Request as Ended
+            FirebaseFirestore.instance
+                .collection("rideRequests")
+                .doc(requestId)
+                .update({"status": "ended"});
+
+            // 3. Reset Driver
+            FirebaseFirestore.instance
+                .collection("online_drivers")
+                .doc(FirebaseAuth.instance.currentUser!.uid)
+                .update({"newRideStatus": "idle"});
+          }
+        });
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text("Trip Completed Successfully!")),
     );
   }
 }

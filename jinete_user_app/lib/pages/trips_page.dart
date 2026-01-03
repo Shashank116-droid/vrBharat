@@ -36,10 +36,9 @@ class _TripsPageState extends State<TripsPage> {
       ),
       body: StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
         stream: FirebaseFirestore.instance
-            .collection("rideRequests")
-            .where("rider_id",
-                isEqualTo: FirebaseAuth.instance.currentUser!.uid)
-            .where("status", isEqualTo: "completed")
+            .collection("trips")
+            .where("riderId", isEqualTo: FirebaseAuth.instance.currentUser!.uid)
+            .orderBy("time", descending: true)
             .snapshots(),
         builder: (context, snapshot) {
           if (snapshot.connectionState == ConnectionState.waiting) {
@@ -81,18 +80,17 @@ class _TripsPageState extends State<TripsPage> {
             itemCount: snapshot.data!.docs.length,
             itemBuilder: (context, index) {
               var data =
-                  snapshot.data!.docs[index].data() as Map<String, dynamic>;
-              String driverName = data["driver_name"] ?? "Driver";
-              String pickup = data["pickup_address"] ?? "Unknown";
-              String dropoff = data["dropoff_address"] ?? "Unknown";
-              String fare = data["fare_offer"] ?? "0";
+                  snapshot.data!.docs[index].data();
+// Trip record might not have name
+              String pickup = data["pickupAddress"] ?? "Unknown";
+              String dropoff = data["destinationAddress"] ?? "Unknown";
+              String fare = data["paymentAmount"] ?? "0";
               String date = "";
 
-              if (data["created_at"] != null) {
-                // created_at is String in HomePage (DateTime.now().toString())
-                // Parse it
+              if (data["time"] != null) {
                 try {
-                  DateTime dt = DateTime.parse(data["created_at"]);
+                  Timestamp t = data["time"];
+                  DateTime dt = t.toDate();
                   date = DateFormat("dd MMM, hh:mm a").format(dt);
                 } catch (e) {
                   date = "";
@@ -129,7 +127,7 @@ class _TripsPageState extends State<TripsPage> {
                                   fontWeight: FontWeight.bold)),
                         ]),
                     const SizedBox(height: 12),
-                    Text("Driver: $driverName",
+                    Text("Trip Completed",
                         style: GoogleFonts.poppins(
                             color: _accentColor, fontWeight: FontWeight.w600)),
                     const SizedBox(height: 8),

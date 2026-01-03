@@ -15,7 +15,7 @@ Future<void> main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
   } catch (e) {
-    print("Firebase Initialization Failed: $e");
+    // Handle error
   }
 
   try {
@@ -25,7 +25,7 @@ Future<void> main() async {
       }
     });
   } catch (e) {
-    print("Permission request failed: $e");
+    // Handle error
   }
 
   runApp(JineteApp());

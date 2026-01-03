@@ -118,18 +118,11 @@ class _EarningsScreenState extends State<EarningsScreen> {
                 const SizedBox(height: 24),
 
                 // Stats Row
-                Row(
-                  children: [
-                    Expanded(
-                      child: _buildStatCard(
-                        "Total Trips",
-                        totalTrips.toString(),
-                      ),
-                    ),
-                    const SizedBox(width: 16),
-                    // Placeholder for future stat like "Hours Online"
-                    Expanded(child: _buildStatCard("Rating", "4.8")),
-                  ],
+                Center(
+                  child: SizedBox(
+                    width: 180,
+                    child: _buildStatCard("Total Trips", totalTrips.toString()),
+                  ),
                 ),
 
                 const SizedBox(height: 30),

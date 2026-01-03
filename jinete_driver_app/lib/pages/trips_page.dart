@@ -20,6 +20,8 @@ class _TripsPageState extends State<TripsPage> {
   final Color _secondaryTextColor = Colors.white54;
   final Color _accentColor = const Color(0xFFFF6B00); // Jinete Orange
 
+  int seatCapacity = 0;
+  String vehicleType = "Car";
   String driverName = "";
   String driverPhone = "";
   String driverCollege = "";
@@ -43,6 +45,20 @@ class _TripsPageState extends State<TripsPage> {
           driverPhone = (snap.data() as Map)["phone"] ?? "";
           driverCollege =
               (snap.data() as Map)["collegeName"] ?? "College Not Found";
+
+          Map<String, dynamic> vDetails =
+              (snap.data() as Map)["vehicleDetails"] ?? {};
+          vehicleType = vDetails["type"] ?? "Car";
+          if (vDetails["seats"] != null) {
+            seatCapacity = int.parse(vDetails["seats"].toString());
+          } else {
+            // Default logic if seats not set
+            if (vehicleType == "Bike") {
+              seatCapacity = 1;
+            } else {
+              seatCapacity = 0;
+            }
+          }
         });
       }
     }
@@ -91,33 +107,53 @@ class _TripsPageState extends State<TripsPage> {
   Widget _buildRequestsTab() {
     String currentDriverId = FirebaseAuth.instance.currentUser!.uid;
 
+    // Stream 1: Check Online Status & New Ride ID
     return StreamBuilder<DocumentSnapshot>(
       stream: FirebaseFirestore.instance
           .collection("online_drivers")
           .doc(currentDriverId)
           .snapshots(),
-      builder: (context, snapshot) {
-        if (!snapshot.hasData) {
+      builder: (context, onlineSnap) {
+        if (!onlineSnap.hasData) {
           return const Center(
             child: CircularProgressIndicator(color: Colors.white),
           );
         }
 
-        if (!snapshot.data!.exists) {
-          return _buildNoRequestsView();
-        }
+        // Stream 2: Check Active Rides Count
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection("rideRequests")
+              .where("driver_id", isEqualTo: currentDriverId)
+              .where("status", whereIn: ["accepted", "arrived", "ontrip"])
+              .snapshots(),
+          builder: (context, activeTripsSnap) {
+            if (!activeTripsSnap.hasData) {
+              return const Center(child: CircularProgressIndicator());
+            }
 
-        Map<String, dynamic> data =
-            snapshot.data!.data() as Map<String, dynamic>;
-        String newRideStatus = data["newRideStatus"] ?? "idle";
+            int activeRidesCount = activeTripsSnap.data!.docs.length;
 
-        if (newRideStatus == "idle") {
-          return _buildNoRequestsView();
-        } else {
-          // Verify if it is a valid ID or just a status string
-          // Assuming user app sends rideRequestId
-          return _buildRideRequestCard(newRideStatus);
-        }
+            // Logic: If Bike and already has 1 active ride, HIDE new requests.
+            if ((vehicleType == "Bike") && activeRidesCount >= 1) {
+              return _buildNoRequestsView();
+            }
+
+            if (!onlineSnap.data!.exists) {
+              return _buildNoRequestsView();
+            }
+
+            Map<String, dynamic> data =
+                onlineSnap.data!.data() as Map<String, dynamic>;
+            String newRideStatus = data["newRideStatus"] ?? "idle";
+
+            if (newRideStatus == "idle") {
+              return _buildNoRequestsView();
+            } else {
+              return _buildRideRequestCard(newRideStatus);
+            }
+          },
+        );
       },
     );
   }
@@ -311,8 +347,55 @@ class _TripsPageState extends State<TripsPage> {
                   const SizedBox(width: 16),
                   Expanded(
                     child: ElevatedButton(
-                      onPressed: () {
+                      onPressed: () async {
                         // Accept Logic
+
+                        // Check if Seats are set (Car/Electric)
+                        if ((vehicleType == "Car" ||
+                                vehicleType == "Electric") &&
+                            seatCapacity <= 0) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                backgroundColor: Colors.red,
+                                content: Text(
+                                  "Please set 'Available Seats' in your Profile first.",
+                                ),
+                              ),
+                            );
+                          }
+                          return;
+                        }
+
+                        // 0. Check Capacity Limit
+                        var activeSnap = await FirebaseFirestore.instance
+                            .collection("rideRequests")
+                            .where(
+                              "driver_id",
+                              isEqualTo: FirebaseAuth.instance.currentUser!.uid,
+                            )
+                            .where(
+                              "status",
+                              whereIn: ["accepted", "arrived", "ontrip"],
+                            )
+                            .get();
+
+                        int currentActive = activeSnap.docs.length;
+
+                        if (currentActive >= seatCapacity) {
+                          if (context.mounted) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              SnackBar(
+                                backgroundColor: Colors.red,
+                                content: Text(
+                                  "Vehicle Full! You have $currentActive active rides. Capacity: $seatCapacity.",
+                                ),
+                              ),
+                            );
+                          }
+                          return;
+                        }
+
                         // 1. Update rideRequest
                         FirebaseFirestore.instance
                             .collection("rideRequests")
@@ -326,16 +409,22 @@ class _TripsPageState extends State<TripsPage> {
                               "driver_college": driverCollege,
                             });
 
-                        // 2. Update status to idle (or 'on_trip')
+                        // 2. Update status to idle (to receive next request?)
+                        // If we want to pool, we MUST set to IDLE so the backend knows we are "Free" to take another
+                        // (assuming backend only checks "idle" flag to send filtered requests)
                         FirebaseFirestore.instance
                             .collection("online_drivers")
                             .doc(FirebaseAuth.instance.currentUser!.uid)
                             .update({"newRideStatus": "idle"});
 
                         // 3. Navigate (or show Snackbar)
-                        ScaffoldMessenger.of(context).showSnackBar(
-                          SnackBar(content: Text("Ride Accepted! Go to Map.")),
-                        );
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(
+                              content: Text("Ride Accepted! Go to Map."),
+                            ),
+                          );
+                        }
                       },
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.green,

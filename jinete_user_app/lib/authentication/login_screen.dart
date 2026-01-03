@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jinete/authentication/signup_screen.dart';
 import 'package:jinete/authentication/otp_verification_screen.dart'; // Added
-import 'package:jinete/global/global_var.dart';
 
 import '../methods/common_methods.dart';
 import '../widgets/loading_dialog.dart';
@@ -56,7 +55,7 @@ class _LoginScreenState extends State<LoginScreen> {
     try {
       final QuerySnapshot userQuery = await FirebaseFirestore.instance
           .collection('users')
-          .where('phone', isEqualTo: phoneNumber)
+          .where('phoneNumber', isEqualTo: phoneNumber)
           .get();
 
       if (userQuery.docs.isEmpty) {

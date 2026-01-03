@@ -3,6 +3,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:jinete/authentication/signup_screen.dart';
+import 'package:jinete/authentication/id_upload_screen.dart'; // Added
 import 'package:jinete/methods/common_methods.dart';
 import 'package:jinete/pages/dashboard.dart'; // Added this import
 import 'package:jinete/widgets/loading_dialog.dart';
@@ -116,7 +117,14 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
       userDataMap["id"] = firebaseUser.uid;
 
       // Ensure phone number matches authenticated number
-      userDataMap["phone"] = firebaseUser.phoneNumber ?? widget.phoneNumber;
+      userDataMap["phoneNumber"] =
+          firebaseUser.phoneNumber ?? widget.phoneNumber;
+
+      // Initialize Schema Fields
+      userDataMap["verified"] = false;
+      userDataMap["documents"] = {};
+      userDataMap["verificationStatus"] = "pending";
+      userDataMap["createdAt"] = DateTime.now().toIso8601String();
 
       await FirebaseFirestore.instance
           .collection('users')
@@ -128,8 +136,8 @@ class _OtpVerificationScreenState extends State<OtpVerificationScreen> {
 
       cMethods.displaySnackBar("Account Created Successfully!", context);
 
-      Navigator.pushAndRemoveUntil(
-          context, cMethods.createRoute(Dashboard()), (route) => false);
+      Navigator.pushAndRemoveUntil(context,
+          cMethods.createRoute(const IdUploadScreen()), (route) => false);
     } catch (e) {
       if (!mounted) return;
       Navigator.pop(context);

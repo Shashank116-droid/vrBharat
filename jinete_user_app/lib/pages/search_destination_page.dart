@@ -204,11 +204,28 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
             // Prediction List
             Expanded(
               child: ListView.separated(
+                keyboardDismissBehavior:
+                    ScrollViewKeyboardDismissBehavior.onDrag,
                 itemCount: placePredictionList.length,
                 physics: const ClampingScrollPhysics(),
                 itemBuilder: (context, index) {
                   return GestureDetector(
+                    behavior: HitTestBehavior.opaque, // Catch all taps
                     onTap: () async {
+                      // Dismiss Keyboard immediately
+                      FocusScope.of(context).unfocus();
+
+                      // Show Loading Dialog
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (c) => Center(
+                          child: CircularProgressIndicator(
+                            color: _accentColor,
+                          ),
+                        ),
+                      );
+
                       // 1. Get Place ID
                       String placeId = placePredictionList[index].placeId!;
 
@@ -216,13 +233,15 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                       var details =
                           await CommonMethods.getPlaceDetails(placeId);
 
+                      // Close Loading Dialog
+                      Navigator.pop(context);
+
                       if (details != null) {
                         var location = details["location"];
                         var lat = location["latitude"];
                         var lng = location["longitude"];
 
                         if (isPickupFocused) {
-                          // ... (Keep existing logic)
                           setState(() {
                             pickUpTextEditingController.text =
                                 placePredictionList[index].mainText!;
@@ -230,9 +249,9 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                             pickupLng = lng;
                             placePredictionList.clear();
                           });
+                          // Delay slightly to allow UI update before focus change if needed
                           dropOffFocusNode.requestFocus();
                         } else {
-                          // ... (Keep existing logic)
                           setState(() {
                             dropOffTextEditingController.text =
                                 placePredictionList[index].mainText!;
@@ -262,8 +281,7 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                           Navigator.pop(context, responseMap);
                         }
                       } else {
-                        print(
-                            "DEBUG: details returned NULL from getPlaceDetails");
+                        // print("DEBUG: details returned NULL from getPlaceDetails");
                       }
                     },
                     child: PlacePredictionTileDesign(

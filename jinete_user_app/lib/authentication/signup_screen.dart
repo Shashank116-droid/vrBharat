@@ -25,6 +25,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
       TextEditingController(); // Added
   TextEditingController collegeIdTextEditingController =
       TextEditingController();
+  TextEditingController emailTextEditingController =
+      TextEditingController(); // Added
   CommonMethods cMethods = CommonMethods();
 
   // Design Colors
@@ -61,6 +63,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
       cMethods.displaySnackBar(
           "Please provide your College Roll Number", context,
           isError: true);
+    } else if (!emailTextEditingController.text.contains("@")) {
+      // Basic Email Validation
+      cMethods.displaySnackBar("Please provide a valid Email Address", context,
+          isError: true);
     } else if (userPhoneTextEditingController.text.trim().length < 9) {
       cMethods.displaySnackBar(
           "Your Phone Number should contain at least 10 characters", context,
@@ -88,7 +94,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
     try {
       final QuerySnapshot phoneQuery = await FirebaseFirestore.instance
           .collection('users')
-          .where('phone', isEqualTo: phoneNumber)
+          .where('phoneNumber', isEqualTo: phoneNumber)
           .get();
 
       if (phoneQuery.docs.isNotEmpty) {
@@ -134,11 +140,23 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
         // Prepare data to pass to OTP screen
         Map<String, dynamic> signUpData = {
-          "name": userNameTextEditingController.text.trim(),
-          "phone": phoneNumber,
+          "fullName": userNameTextEditingController.text.trim(),
+          "phoneNumber": phoneNumber,
+          "email": emailTextEditingController.text.trim(),
+          "collegeEmail":
+              emailTextEditingController.text.trim(), // Added per schema
           "collegeName": collegeNameTextEditingController.text.trim(),
-          "collegeId": collegeIdTextEditingController.text.trim(),
+          "studentId": collegeIdTextEditingController.text.trim(),
           "blockStatus": "no",
+
+          // Default Schema Fields
+          "driverVerificationStatus": "not_applied",
+          "userType": "passenger",
+          "rating": 0,
+          "totalRides": 0,
+          "isActive": true,
+          "profileCompleted": false,
+          "studentVerificationStatus": "pending",
         };
 
         // Navigate to OTP Screen with signUpData
@@ -280,6 +298,38 @@ class _SignUpScreenState extends State<SignUpScreen> {
                             filled: true,
                             fillColor: _inputColor,
                             hintText: "College Roll Number",
+                            hintStyle: GoogleFonts.poppins(
+                                color: _hintColor, fontSize: 14),
+                            contentPadding: const EdgeInsets.symmetric(
+                                horizontal: 16, vertical: 14),
+                            border: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            enabledBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide: BorderSide.none,
+                            ),
+                            focusedBorder: OutlineInputBorder(
+                              borderRadius: BorderRadius.circular(12),
+                              borderSide:
+                                  BorderSide(color: _accentColor, width: 1.5),
+                            ),
+                          ),
+                        ),
+
+                        const SizedBox(height: 20),
+
+                        // Email (Added)
+                        TextField(
+                          controller: emailTextEditingController,
+                          keyboardType: TextInputType.emailAddress,
+                          style: GoogleFonts.poppins(
+                              color: _textColor, fontSize: 14),
+                          decoration: InputDecoration(
+                            filled: true,
+                            fillColor: _inputColor,
+                            hintText: "Email Address",
                             hintStyle: GoogleFonts.poppins(
                                 color: _hintColor, fontSize: 14),
                             contentPadding: const EdgeInsets.symmetric(

@@ -61,11 +61,12 @@ class _DashboardState extends State<Dashboard>
         ],
         currentIndex: indexSelected,
         unselectedItemColor: Colors.grey,
-        selectedItemColor: Colors.pink,
+        selectedItemColor: const Color(0xFFFF6B00),
         showUnselectedLabels: true,
         selectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
         unselectedLabelStyle: GoogleFonts.poppins(fontSize: 12),
         type: BottomNavigationBarType.fixed,
+        backgroundColor: const Color(0xFF101015),
         onTap: onBarItemClicked,
       ),
     );

@@ -145,108 +145,113 @@ class _NewTripScreenState extends State<NewTripScreen> {
               offset: Offset(0, 8),
             ),
           ],
+          border: Border.all(color: Colors.white12, width: 1),
         ),
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            // Icon / Header
-            const Icon(Icons.directions_car, size: 60, color: Colors.white),
-            const SizedBox(height: 10),
-            Text(
-              "New Ride Request",
-              style: GoogleFonts.poppins(
-                fontSize: 22,
-                fontWeight: FontWeight.bold,
-                color: _textColor,
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              // Icon / Header
+              const Icon(Icons.directions_car, size: 60, color: Colors.white),
+              const SizedBox(height: 10),
+              Text(
+                "New Ride Request",
+                style: GoogleFonts.poppins(
+                  fontSize: 22,
+                  fontWeight: FontWeight.bold,
+                  color: _textColor,
+                ),
               ),
-            ),
-            const SizedBox(height: 24),
+              const SizedBox(height: 24),
 
-            // Pickup
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.my_location, color: Colors.green),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    pickupAddress,
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: _secondaryTextColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 16),
-
-            // Dropoff
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                const Icon(Icons.location_on, color: Colors.red),
-                const SizedBox(width: 12),
-                Expanded(
-                  child: Text(
-                    dropOffAddress,
-                    style: GoogleFonts.poppins(
-                      fontSize: 16,
-                      color: _secondaryTextColor,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 30),
-
-            // Buttons
-            Row(
-              children: [
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: declineRideRequest,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _declineColor,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+              // Pickup
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.my_location, color: Colors.green),
+                  const SizedBox(width: 12),
+                  Expanded(
                     child: Text(
-                      "Decline",
+                      pickupAddress,
                       style: GoogleFonts.poppins(
                         fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: _secondaryTextColor,
                       ),
                     ),
                   ),
-                ),
-                const SizedBox(width: 16),
-                Expanded(
-                  child: ElevatedButton(
-                    onPressed: acceptRideRequest,
-                    style: ElevatedButton.styleFrom(
-                      backgroundColor: _acceptColor,
-                      padding: const EdgeInsets.symmetric(vertical: 14),
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                    ),
+                ],
+              ),
+              const SizedBox(height: 16),
+
+              // Dropoff
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Icon(Icons.location_on, color: Colors.red),
+                  const SizedBox(width: 12),
+                  Expanded(
                     child: Text(
-                      "Accept",
+                      dropOffAddress,
                       style: GoogleFonts.poppins(
                         fontSize: 16,
-                        fontWeight: FontWeight.bold,
-                        color: Colors.white,
+                        color: _secondaryTextColor,
                       ),
                     ),
                   ),
-                ),
-              ],
-            ),
-          ],
+                ],
+              ),
+              const SizedBox(height: 30),
+
+              // Buttons
+              Row(
+                children: [
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: declineRideRequest,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _declineColor,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        elevation: 5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                      child: Text(
+                        "Decline",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                  const SizedBox(width: 16),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: acceptRideRequest,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: _acceptColor,
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        elevation: 5,
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(30),
+                        ),
+                      ),
+                      child: Text(
+                        "Accept",
+                        style: GoogleFonts.poppins(
+                          fontSize: 16,
+                          fontWeight: FontWeight.bold,
+                          color: Colors.white,
+                        ),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );

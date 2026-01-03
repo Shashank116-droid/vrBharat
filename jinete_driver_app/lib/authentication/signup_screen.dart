@@ -29,13 +29,14 @@ class _SignUpScreenState extends State<SignUpScreen> {
       TextEditingController();
   TextEditingController userPhoneTextEditingController =
       TextEditingController();
+  TextEditingController emailTextEditingController = TextEditingController();
 
   @override
   void initState() {
     super.initState();
     if (widget.userProfileData != null) {
-      if (widget.userProfileData!["name"] != null) {
-        userNameTextEditingController.text = widget.userProfileData!["name"]
+      if (widget.userProfileData!["fullName"] != null) {
+        userNameTextEditingController.text = widget.userProfileData!["fullName"]
             .toString();
       }
       if (widget.userProfileData!["collegeName"] != null) {
@@ -43,13 +44,18 @@ class _SignUpScreenState extends State<SignUpScreen> {
             .userProfileData!["collegeName"]
             .toString();
       }
-      if (widget.userProfileData!["rollNumber"] != null) {
+      if (widget.userProfileData!["studentId"] != null) {
         rollNumberTextEditingController.text = widget
-            .userProfileData!["rollNumber"]
+            .userProfileData!["studentId"]
             .toString();
       }
-      if (widget.userProfileData!["phone"] != null) {
-        userPhoneTextEditingController.text = widget.userProfileData!["phone"]
+      if (widget.userProfileData!["phoneNumber"] != null) {
+        userPhoneTextEditingController.text = widget
+            .userProfileData!["phoneNumber"]
+            .toString();
+      }
+      if (widget.userProfileData!["email"] != null) {
+        emailTextEditingController.text = widget.userProfileData!["email"]
             .toString();
       }
     }
@@ -60,7 +66,8 @@ class _SignUpScreenState extends State<SignUpScreen> {
           widget.existingUser!.phoneNumber ?? "";
     }
   }
-  // Removed Email/Password controllers for Phone Auth
+
+  // Remainder of class restored
 
   CommonMethods cMethods = CommonMethods();
 
@@ -92,8 +99,16 @@ class _SignUpScreenState extends State<SignUpScreen> {
         "Your Phone Number should contain 10 characters",
         context,
       );
+    } else if (!emailTextEditingController.text.contains("@")) {
+      cMethods.displaySnackBar("Please enter a valid email", context);
     } else {
-      startPhoneAuth();
+      if (widget.existingUser != null) {
+        // User already authenticated via Login Screen
+        saveDriverInfoToFirestore(widget.existingUser!);
+      } else {
+        // Fresh Signup - Verify Phone
+        startPhoneAuth();
+      }
     }
   }
 
@@ -107,7 +122,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
 
     String phoneNumber = userPhoneTextEditingController.text.trim();
     if (!phoneNumber.startsWith("+")) {
-      // Default to India +91 if not provided, consistent with Login logic
+      // Default to India +91 if not provided
       phoneNumber = "+91$phoneNumber";
     }
 
@@ -238,35 +253,40 @@ class _SignUpScreenState extends State<SignUpScreen> {
     }
 
     if (!context.mounted) return;
-    Navigator.pop(context);
+    Navigator.pop(context); // Close "Registering Account..."
 
     if (userFirebase != null) {
-      Map<String, dynamic> driverDataMap = {
-        "name": userNameTextEditingController.text.trim(),
-        "collegeName": collegeNameTextEditingController.text.trim(),
-        "rollNumber": rollNumberTextEditingController.text.trim(),
-        "phone": userPhoneTextEditingController.text.trim(),
-        "id": userFirebase.uid,
-        "blockStatus": "no",
-      };
-
-      FirebaseFirestore.instance
-          .collection("drivers")
-          .doc(userFirebase.uid)
-          .set(driverDataMap);
-
-      // Do NOT sign out. Redirect to Vehicle Info Screen for final step.
-      cMethods.displaySnackBar(
-        "Account Created. Please Select Vehicle Type.",
-        context,
-      );
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (c) => VehicleInfoScreen(driverId: userFirebase!.uid),
-        ),
-      );
+      saveDriverInfoToFirestore(userFirebase);
     }
+  }
+
+  Future<void> saveDriverInfoToFirestore(User userFirebase) async {
+    Map<String, dynamic> driverDataMap = {
+      "name": userNameTextEditingController.text.trim(),
+      "collegeName": collegeNameTextEditingController.text.trim(),
+      "rollNumber": rollNumberTextEditingController.text.trim(),
+      "phoneNumber": userPhoneTextEditingController.text.trim(),
+      "email": emailTextEditingController.text.trim(),
+      "id": userFirebase.uid,
+      "blockStatus": "no",
+    };
+
+    FirebaseFirestore.instance
+        .collection("drivers")
+        .doc(userFirebase.uid)
+        .set(driverDataMap);
+
+    // Redirect to Vehicle Info Screen
+    cMethods.displaySnackBar(
+      "Account Created. Please Select Vehicle Type.",
+      context,
+    );
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (c) => VehicleInfoScreen(driverId: userFirebase.uid),
+      ),
+    );
   }
 
   @override
@@ -356,7 +376,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                       const SizedBox(height: 20),
 
-                      // College Name (Added)
+                      // College Name
                       TextField(
                         controller: collegeNameTextEditingController,
                         keyboardType: TextInputType.text,
@@ -395,7 +415,7 @@ class _SignUpScreenState extends State<SignUpScreen> {
                       ),
                       const SizedBox(height: 20),
 
-                      // Roll Number (Added)
+                      // Roll Number
                       TextField(
                         controller: rollNumberTextEditingController,
                         keyboardType: TextInputType.text,
@@ -446,6 +466,45 @@ class _SignUpScreenState extends State<SignUpScreen> {
                           filled: true,
                           fillColor: _inputColor,
                           hintText: "Phone Number",
+                          hintStyle: GoogleFonts.poppins(
+                            color: _hintColor,
+                            fontSize: 14,
+                          ),
+                          contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 16,
+                            vertical: 14,
+                          ),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: _accentColor,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+
+                      // Email (Added)
+                      TextField(
+                        controller: emailTextEditingController,
+                        keyboardType: TextInputType.emailAddress,
+                        style: GoogleFonts.poppins(
+                          color: _textColor,
+                          fontSize: 14,
+                        ),
+                        decoration: InputDecoration(
+                          filled: true,
+                          fillColor: _inputColor,
+                          hintText: "Email",
                           hintStyle: GoogleFonts.poppins(
                             color: _hintColor,
                             fontSize: 14,
