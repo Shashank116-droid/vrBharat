@@ -5,6 +5,8 @@ import 'package:google_fonts/google_fonts.dart';
 import 'package:intl/intl.dart';
 import 'package:jinete_driver_app/methods/common_methods.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
+import 'package:jinete_driver_app/pages/dashboard.dart';
+import 'dart:math';
 
 class TripsPage extends StatefulWidget {
   const TripsPage({super.key});
@@ -42,7 +44,10 @@ class _TripsPageState extends State<TripsPage> {
       if (mounted) {
         setState(() {
           driverName = (snap.data() as Map)["name"] ?? "Driver";
-          driverPhone = (snap.data() as Map)["phone"] ?? "";
+          driverPhone =
+              (snap.data() as Map)["phone"] ??
+              FirebaseAuth.instance.currentUser!.phoneNumber ??
+              "";
           driverCollege =
               (snap.data() as Map)["collegeName"] ?? "College Not Found";
 
@@ -67,7 +72,7 @@ class _TripsPageState extends State<TripsPage> {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 2,
+      length: 3,
       child: Scaffold(
         backgroundColor: _backgroundColor,
         appBar: AppBar(
@@ -86,17 +91,16 @@ class _TripsPageState extends State<TripsPage> {
             indicatorColor: _accentColor,
             labelStyle: GoogleFonts.poppins(fontWeight: FontWeight.bold),
             tabs: const [
-              Tab(text: "Requests"),
+              Tab(text: "Live"),
+              Tab(text: "Scheduled"),
               Tab(text: "History"),
             ],
           ),
         ),
         body: TabBarView(
           children: [
-            // Tab 1: Requests
             _buildRequestsTab(),
-
-            // Tab 2: History
+            _buildScheduledTab(),
             _buildHistoryTab(),
           ],
         ),
@@ -104,6 +108,554 @@ class _TripsPageState extends State<TripsPage> {
     );
   }
 
+  // --- SCHEDULED TAB ---
+  Widget _buildScheduledTab() {
+    return SingleChildScrollView(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          // 1. Pending Booking Requests
+          _buildIncomingBookings(),
+
+          Divider(color: Colors.white12, thickness: 1),
+
+          // 2. My Created Scheduled Trips
+          Padding(
+            padding: const EdgeInsets.all(16.0),
+            child: Text(
+              "My Upcoming Trips",
+              style: GoogleFonts.poppins(
+                color: Colors.white54,
+                fontSize: 14,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          _buildMyScheduledTrips(),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildIncomingBookings() {
+    String myUid = FirebaseAuth.instance.currentUser!.uid;
+
+    // Outer Stream: Fetch My Scheduled Trips to validate availability
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection("scheduled_trips")
+          .where("driverId", isEqualTo: myUid)
+          .where("status", isEqualTo: "scheduled")
+          .snapshots(),
+      builder: (context, tripSnapshot) {
+        // Collect my trip times
+        List<int> myTripTimes = [];
+        if (tripSnapshot.hasData) {
+          for (var doc in tripSnapshot.data!.docs) {
+            var d = doc.data() as Map<String, dynamic>;
+            if (d["tripDate"] != null) {
+              myTripTimes.add(d["tripDate"] as int);
+            }
+          }
+        }
+
+        // Inner Stream: Fetch Bookings
+        return StreamBuilder<QuerySnapshot>(
+          stream: FirebaseFirestore.instance
+              .collection("bookings")
+              .where("driverId", whereIn: [myUid, "waiting"])
+              .snapshots(),
+          builder: (context, snapshot) {
+            if (!snapshot.hasData) return SizedBox();
+
+            // Client-side filtering
+            var docs = snapshot.data!.docs.where((d) {
+              var data = d.data() as Map<String, dynamic>;
+              String status = data["status"] ?? "";
+              String bDriverId = data["driverId"] ?? "";
+              int bTime = data["tripDate"] ?? 0;
+              List rejectedBy = data["rejectedBy"] ?? [];
+
+              // 0. Rejection Check (Hide if I already rejected it)
+              if (rejectedBy.contains(myUid)) return false;
+
+              // 1. Status Check
+              if (!["pending", "accepted"].contains(status)) return false;
+
+              // 2. Ownership Check (Accepted/Assigned trips)
+              if (bDriverId == myUid) return true;
+
+              // 3. Time Window Check for 'waiting' requests (Broadcasts)
+              if (bDriverId == "waiting") {
+                // Return true if any of my trips are within +/- 30 mins
+                bool matchesSchedule = myTripTimes.any((myTime) {
+                  int diff = (myTime - bTime).abs();
+                  // Debug Log for verification
+                  print(
+                    "DEBUG: Checking Schedule Match - MyTime: $myTime, BookTime: $bTime, Diff: $diff",
+                  );
+                  // 30 mins = 1,800,000 ms.
+                  // A 24-hour difference is 86,400,000 ms, so this safely excludes trips on different dates.
+                  return diff <= 1800000;
+                });
+                return matchesSchedule;
+              }
+
+              return false;
+            }).toList();
+
+            if (docs.isEmpty) return SizedBox();
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: Text(
+                    "New Booking Requests",
+                    style: GoogleFonts.poppins(
+                      color: _accentColor,
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+                ListView.builder(
+                  shrinkWrap: true,
+                  physics: NeverScrollableScrollPhysics(),
+                  itemCount: docs.length,
+                  itemBuilder: (context, index) {
+                    var doc = docs[index];
+                    var data = doc.data() as Map<String, dynamic>;
+                    return Container(
+                      margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                      padding: EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: _cardColor,
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: _accentColor),
+                      ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 8,
+                              vertical: 4,
+                            ),
+                            margin: const EdgeInsets.only(bottom: 8),
+                            decoration: BoxDecoration(
+                              color: Colors.amber.withOpacity(0.2),
+                              borderRadius: BorderRadius.circular(5),
+                              border: Border.all(
+                                color: Colors.amber.withOpacity(0.6),
+                              ),
+                            ),
+                            child: Text(
+                              "Trip Time: ${data["tripDate"] != null ? DateFormat('EEE, MMM d • h:mm a').format(DateTime.fromMillisecondsSinceEpoch(data["tripDate"])) : 'N/A'}",
+                              style: GoogleFonts.poppins(
+                                color: Colors.amber,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                              ),
+                            ),
+                          ),
+                          Text(
+                            "Rider: ${data['riderName']}",
+                            style: GoogleFonts.poppins(
+                              color: _textColor,
+                              fontWeight: FontWeight.bold,
+                            ),
+                          ),
+                          Text(
+                            "From: ${data['pickup']['address']}",
+                            style: GoogleFonts.poppins(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                          Text(
+                            "To: ${data['destination']['address']}",
+                            style: GoogleFonts.poppins(
+                              color: Colors.white70,
+                              fontSize: 13,
+                            ),
+                          ),
+                          SizedBox(height: 10),
+                          data['status'] == 'accepted'
+                              ? Column(
+                                  children: [
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: _accentColor,
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                        ),
+                                        onPressed: () async {
+                                          String newRideId = FirebaseFirestore
+                                              .instance
+                                              .collection("rideRequests")
+                                              .doc()
+                                              .id;
+
+                                          // 1. Create Live Ride Request
+                                          _startSelfManagedTrip(
+                                            doc.id,
+                                            data,
+                                            newRideId,
+                                          );
+                                        },
+                                        child: Text(
+                                          "Start Ride",
+                                          style: GoogleFonts.poppins(
+                                            fontSize: 16,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    SizedBox(
+                                      width: double.infinity,
+                                      child: OutlinedButton(
+                                        style: OutlinedButton.styleFrom(
+                                          side: const BorderSide(
+                                            color: Colors.redAccent,
+                                          ),
+                                          padding: const EdgeInsets.symmetric(
+                                            vertical: 12,
+                                          ),
+                                        ),
+                                        onPressed: () async {
+                                          // Cancel Logic
+                                          await FirebaseFirestore.instance
+                                              .collection("bookings")
+                                              .doc(doc.id)
+                                              .update({
+                                                "status": "cancelled",
+                                                "cancelledBy": "driver",
+                                                "cancelledAt":
+                                                    FieldValue.serverTimestamp(),
+                                              });
+                                          if (context.mounted) {
+                                            ScaffoldMessenger.of(
+                                              context,
+                                            ).showSnackBar(
+                                              const SnackBar(
+                                                content: Text("Trip Cancelled"),
+                                              ),
+                                            );
+                                          }
+                                        },
+                                        child: Text(
+                                          "Cancel Trip",
+                                          style: GoogleFonts.poppins(
+                                            color: Colors.redAccent,
+                                            fontWeight: FontWeight.bold,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                )
+                              : Row(
+                                  children: [
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.green,
+                                        ),
+                                        onPressed: () => acceptBooking(doc.id),
+                                        child: Text("Accept"),
+                                      ),
+                                    ),
+                                    SizedBox(width: 10),
+                                    Expanded(
+                                      child: ElevatedButton(
+                                        style: ElevatedButton.styleFrom(
+                                          backgroundColor: Colors.red,
+                                        ),
+                                        onPressed: () => declineBooking(doc.id),
+                                        child: Text("Decline"),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                        ],
+                      ),
+                    );
+                  },
+                ),
+              ],
+            );
+          },
+        );
+      },
+    );
+  }
+
+  // Helper moved out or refined in future steps, but for now inline replacement
+  Future<void> _startSelfManagedTrip(
+    String docId,
+    Map<String, dynamic> data,
+    String newRideId,
+  ) async {
+    // 1. Create Live Ride Request
+    String otpCode = data["otp"] ?? (Random().nextInt(9000) + 1000).toString();
+
+    // 1. Create Live Ride Request
+    await FirebaseFirestore.instance
+        .collection("rideRequests")
+        .doc(newRideId)
+        .set({
+          "driver_id": FirebaseAuth.instance.currentUser!.uid,
+          "rider_id": data["riderId"],
+          "driver_name": data["driverName"] ?? driverName,
+          "driver_phone":
+              data["driverPhone"] ??
+              driverPhone ??
+              FirebaseAuth.instance.currentUser!.phoneNumber,
+          "driver_college": data["driverCollege"] ?? driverCollege,
+          "otp": otpCode,
+          "rider_name":
+              data["riderName"] ?? data["userName"] ?? data["name"] ?? "Rider",
+          "rider_phone":
+              data["riderPhone"] ?? data["userPhone"] ?? data["phone"] ?? "",
+          "rider_college":
+              data["riderCollege"] ??
+              data["userCollege"] ??
+              "College Info Unavailable",
+          "pickup": data["pickup"],
+          "destination": data["destination"],
+          "status": "accepted", // Triggers 'Driver Arriving' UI
+          "created_at": FieldValue.serverTimestamp(),
+          "tripDate": data["tripDate"],
+          "fare_offer":
+              data["fare"] ?? data["amount"] ?? data["fare_offer"] ?? "0",
+        });
+
+    // 2. Update Booking (Link to Live Ride)
+    await FirebaseFirestore.instance.collection("bookings").doc(docId).update({
+      "status": "started",
+      "rideRequestId": newRideId,
+    });
+
+    // 3. Update Online Driver Status (to ensure HomePage sync)
+    await FirebaseFirestore.instance
+        .collection("online_drivers")
+        .doc(FirebaseAuth.instance.currentUser!.uid)
+        .update({"newRideStatus": "accepted"});
+
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text("Ride Started! Switching to Live Mode...")),
+    );
+
+    // 4. Force Navigate to Dashboard (Fresh State with Bottom Nav)
+    if (mounted) {
+      Navigator.pushAndRemoveUntil(
+        context,
+        MaterialPageRoute(builder: (c) => const Dashboard()),
+        (route) => false,
+      );
+    }
+  }
+
+  Widget _buildMyScheduledTrips() {
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection("scheduled_trips")
+          .where("driverId", isEqualTo: FirebaseAuth.instance.currentUser!.uid)
+          .where("status", isEqualTo: "scheduled")
+          .orderBy(
+            "tripDate",
+          ) // Ensure index exists or remove order by if needed
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (!snapshot.hasData)
+          return Center(child: CircularProgressIndicator(color: _accentColor));
+        if (snapshot.data!.docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.all(30.0),
+              child: Text(
+                "No upcoming trips scheduled.",
+                style: GoogleFonts.poppins(color: Colors.white38),
+              ),
+            ),
+          );
+        }
+
+        return ListView.builder(
+          shrinkWrap: true,
+          physics: NeverScrollableScrollPhysics(),
+          itemCount: snapshot.data!.docs.length,
+          itemBuilder: (context, index) {
+            var doc = snapshot.data!.docs[index];
+            var data = doc.data() as Map<String, dynamic>;
+            int? date = data['tripDate'];
+            String timeStr = date != null
+                ? DateFormat(
+                    'dd MMM, hh:mm a',
+                  ).format(DateTime.fromMillisecondsSinceEpoch(date))
+                : "";
+
+            return Container(
+              margin: EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              padding: EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: _cardColor,
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text(
+                        timeStr,
+                        style: GoogleFonts.poppins(
+                          color: _accentColor,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                      Icon(
+                        Icons.calendar_today,
+                        color: Colors.white54,
+                        size: 16,
+                      ),
+                    ],
+                  ),
+                  SizedBox(height: 8),
+                  _buildLocationRow(
+                    Icons.my_location,
+                    Colors.green,
+                    data['pickup']['address'] ?? "",
+                  ),
+                  SizedBox(height: 8),
+                  _buildLocationRow(
+                    Icons.location_on,
+                    Colors.red,
+                    data['destination']['address'] ?? "",
+                  ),
+                  SizedBox(height: 12),
+                  // Delete/Cancel Option
+                  Align(
+                    alignment: Alignment.centerRight,
+                    child: TextButton(
+                      onPressed: () async {
+                        // 1. Update Trip Status (Logic consistency)
+                        await FirebaseFirestore.instance
+                            .collection("scheduled_trips")
+                            .doc(doc.id)
+                            .update({
+                              "status": "cancelled",
+                              "cancelledBy": "driver",
+                              "cancelledAt": FieldValue.serverTimestamp(),
+                            });
+
+                        // 2. Notify Users via Booking Update
+                        // Find all bookings for this trip
+                        var bookingsQuery = await FirebaseFirestore.instance
+                            .collection("bookings")
+                            // We need to link bookings to scheduledTripId if possible,
+                            // or match by driverId + time.
+                            // The booking creation (createOpenBooking or Accept) might not link 'scheduledTripId' perfectly if it was a broadcast.
+                            // But usually, if it's a specific scheduled trip, the booking has 'driverId'.
+                            .where(
+                              "driverId",
+                              isEqualTo: FirebaseAuth.instance.currentUser!.uid,
+                            )
+                            .where("tripDate", isEqualTo: data["tripDate"])
+                            .get();
+
+                        for (var b in bookingsQuery.docs) {
+                          b.reference.update({
+                            "status": "cancelled",
+                            "cancelledBy": "driver",
+                            "cancelledAt": FieldValue.serverTimestamp(),
+                          });
+                        }
+
+                        // 3. Delete Confirmation Logic
+                        // We shouldn't delete immediately if we want to keep history,
+                        // but strictly speaking 'Unpublish' means delete.
+                        // We delay delete to ensure triggers fire.
+                        Future.delayed(const Duration(seconds: 3), () {
+                          FirebaseFirestore.instance
+                              .collection("scheduled_trips")
+                              .doc(doc.id)
+                              .delete();
+                        });
+
+                        if (context.mounted) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            const SnackBar(content: Text("Trip Cancelled")),
+                          );
+                        }
+                      },
+                      child: Text(
+                        "Cancel Trip",
+                        style: TextStyle(color: Colors.redAccent),
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  void acceptBooking(String docId) {
+    String otpCode = (Random().nextInt(9000) + 1000).toString();
+    FirebaseFirestore.instance.collection("bookings").doc(docId).update({
+      "status": "accepted",
+      "driverId": FirebaseAuth.instance.currentUser!.uid,
+      "driverName": driverName,
+      "driverPhone": driverPhone,
+      "driverCollege": driverCollege,
+      "otp": otpCode,
+    });
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text("Booking Accepted!")));
+  }
+
+  void declineBooking(String docId) async {
+    var doc = await FirebaseFirestore.instance
+        .collection("bookings")
+        .doc(docId)
+        .get();
+
+    if (doc.exists) {
+      String bDriverId = (doc.data() as Map)["driverId"] ?? "";
+      if (bDriverId == "waiting") {
+        // Broadcast Request: Just ignore it for this driver
+        await FirebaseFirestore.instance
+            .collection("bookings")
+            .doc(docId)
+            .update({
+              "rejectedBy": FieldValue.arrayUnion([
+                FirebaseAuth.instance.currentUser!.uid,
+              ]),
+            });
+      } else {
+        // Direct Request: Reject it
+        await FirebaseFirestore.instance
+            .collection("bookings")
+            .doc(docId)
+            .update({"status": "rejected"});
+      }
+    }
+  }
+
+  // --- EXISTING LIVE TAB ---
   Widget _buildRequestsTab() {
     String currentDriverId = FirebaseAuth.instance.currentUser!.uid;
 
@@ -166,7 +718,7 @@ class _TripsPageState extends State<TripsPage> {
           Icon(Icons.local_taxi, size: 80, color: Colors.grey[800]),
           const SizedBox(height: 16),
           Text(
-            "No Pending Requests",
+            "Looking for nearby passengers...",
             style: GoogleFonts.poppins(
               color: _secondaryTextColor,
               fontSize: 16,
@@ -408,6 +960,26 @@ class _TripsPageState extends State<TripsPage> {
                               "driver_phone": driverPhone,
                               "driver_college": driverCollege,
                             });
+
+                        // --- SHADOW BOOKING UPDATE (Notification) ---
+                        FirebaseFirestore.instance
+                            .collection("bookings")
+                            .where("rideRequestId", isEqualTo: rideRequestId)
+                            .where("is_live_shadow", isEqualTo: true)
+                            .get()
+                            .then((docs) {
+                              if (docs.docs.isNotEmpty) {
+                                docs.docs.first.reference.update({
+                                  "status": "accepted",
+                                  "driverId":
+                                      FirebaseAuth.instance.currentUser!.uid,
+                                  "driverName": driverName,
+                                  "driverPhone": driverPhone,
+                                  "driverCollege": driverCollege,
+                                });
+                              }
+                            });
+                        // --------------------------------------------
 
                         // 2. Update status to idle (to receive next request?)
                         // If we want to pool, we MUST set to IDLE so the backend knows we are "Free" to take another

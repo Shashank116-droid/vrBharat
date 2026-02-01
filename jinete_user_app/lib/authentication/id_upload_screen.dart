@@ -54,6 +54,20 @@ class _IdUploadScreenState extends State<IdUploadScreen> {
     try {
       String uid = FirebaseAuth.instance.currentUser!.uid;
       String fileName = "id_card";
+
+      // 1. Check Previous Status
+      DocumentSnapshot userDoc =
+          await FirebaseFirestore.instance.collection("users").doc(uid).get();
+
+      bool isReupload = false;
+      if (userDoc.exists) {
+        String currentStatus =
+            (userDoc.data() as Map)["verificationStatus"] ?? "";
+        if (currentStatus == "rejected") {
+          isReupload = true;
+        }
+      }
+
       Reference storageRef = FirebaseStorage.instance
           .ref()
           .child("student_ids")
@@ -64,13 +78,23 @@ class _IdUploadScreenState extends State<IdUploadScreen> {
       TaskSnapshot snapshot = await uploadTask;
       String downloadUrl = await snapshot.ref.getDownloadURL();
 
-      await FirebaseFirestore.instance.collection("users").doc(uid).update({
+      Map<String, dynamic> updateData = {
         "documents.studentIdCard": downloadUrl,
         "verified": false, // Initial state for Admin Panel
         "verificationStatus": "pending", // Internal UI state
         "studentVerificationStatus": "pending", // Schema Sync
         "profileCompleted": true,
-      });
+      };
+
+      // 2. Set strict flag if re-uploading
+      if (isReupload) {
+        updateData["hasPriorRejection"] = true;
+      }
+
+      await FirebaseFirestore.instance
+          .collection("users")
+          .doc(uid)
+          .update(updateData);
 
       if (!mounted) return;
       Navigator.pop(context); // Close dialog

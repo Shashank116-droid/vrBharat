@@ -13,10 +13,13 @@ import 'package:geolocator/geolocator.dart';
 import 'package:google_fonts/google_fonts.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:jinete_driver_app/pages/chat_screen.dart';
+import 'package:jinete_driver_app/pages/create_trip_screen.dart';
 import 'package:jinete_driver_app/global/global_var.dart';
 import 'package:jinete_driver_app/methods/common_methods.dart';
-import 'package:jinete_driver_app/push_notification/push_notification_system.dart';
+// PushNotificationSystem import removed
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:jinete_driver_app/pages/new_trip_screen.dart';
+import 'package:flutter_ringtone_player/flutter_ringtone_player.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 class HomePage extends StatefulWidget {
@@ -42,6 +45,9 @@ class _HomePageState extends State<HomePage>
   String verificationStatus = "pending";
 
   StreamSubscription<Position>? positionStreamHomePage;
+  StreamSubscription<DocumentSnapshot>? driverInfoSubscription;
+  StreamSubscription<QuerySnapshot>? activeTripSubscription;
+  StreamSubscription<DocumentSnapshot>? rideRequestSubscription;
 
   Set<Marker> markersSet = {};
   Set<Circle> circlesSet = {};
@@ -68,7 +74,6 @@ class _HomePageState extends State<HomePage>
   @override
   void initState() {
     super.initState();
-    PushNotificationSystem.initializeNotification();
     getUserInfo();
   }
 
@@ -77,31 +82,47 @@ class _HomePageState extends State<HomePage>
     activeTripSubscription?.cancel();
     rideRequestSubscription?.cancel();
     positionStreamHomePage?.cancel();
+    driverInfoSubscription?.cancel(); // Cancel listener
     super.dispose();
   }
 
   void getUserInfo() {
-    FirebaseFirestore.instance
+    driverInfoSubscription = FirebaseFirestore.instance
         .collection("drivers")
         .doc(FirebaseAuth.instance.currentUser!.uid)
-        .get()
-        .then((docSnapshot) {
+        .snapshots() // Listen for changes
+        .listen((docSnapshot) {
           if (docSnapshot.exists) {
+            var data = docSnapshot.data() as Map<String, dynamic>;
+
+            // Normalize status check
+            String vStatus = (data["verificationStatus"] ?? "pending")
+                .toString()
+                .toLowerCase();
+            bool isVerified = data["verified"] == true;
+
+            String finalStatus = "pending";
+            if (vStatus == "approved" || vStatus == "verified" || isVerified) {
+              finalStatus = "approved";
+            }
+
             setState(() {
-              driverName = (docSnapshot.data() as Map)["name"];
-              driverPhone = (docSnapshot.data() as Map)["phone"];
-              verificationStatus =
-                  (docSnapshot.data() as Map)["verificationStatus"] ??
-                  "pending";
+              driverName = data["name"] ?? "";
+              driverPhone = data["phone"] ?? "";
+              verificationStatus = finalStatus;
             });
 
+            // Loop check: specific actions when approved
             if (verificationStatus == "approved") {
-              // If approved, trigger online status (if map ready)
-              // We can check if controller is ready or just call it,
-              // but safer to wait for map or if map is already ready.
+              // We typically start location updates here if not already started
               if (controllerGoogleMap != null) {
+                // Ensure we don't spam online calls, but driverIsOnlineNow handles existing streams
                 driverIsOnlineNow();
               }
+
+              // If we just got approved, maybe show a snackbar?
+              // But this fires on every update, so be careful.
+              // For now, simpler is better.
             }
           }
         });
@@ -149,8 +170,6 @@ class _HomePageState extends State<HomePage>
     driverIsOnlineNow();
   }
 
-  StreamSubscription? rideRequestSubscription;
-  StreamSubscription? activeTripSubscription;
   final geo = GeoFlutterFire();
 
   driverIsOnlineNow() async {
@@ -177,17 +196,51 @@ class _HomePageState extends State<HomePage>
           "position": myLocation.data,
           "name": driverName,
           "phone": driverPhone,
-          "newRideStatus": "idle",
+          "newRideStatus": "waiting_input",
         });
 
     // 4. Start listening to live updates
     driverLocationRealtimeUpdates();
 
     // 5. Start listening for new ride requests
-    rideRequestSubscription = PushNotificationSystem.listenForNewRide(context);
+    // 5. Start listening for new ride requests
+    listenForNewRideRequest();
 
     // 6. Check for Active Trip
     checkActiveTrip();
+  }
+
+  void listenForNewRideRequest() {
+    rideRequestSubscription = FirebaseFirestore.instance
+        .collection("online_drivers")
+        .doc(FirebaseAuth.instance.currentUser!.uid)
+        .snapshots()
+        .listen((DocumentSnapshot snapshot) {
+          if (snapshot.exists) {
+            Map<String, dynamic> data = snapshot.data() as Map<String, dynamic>;
+            String rideRequestId = data["newRideStatus"] ?? "idle";
+
+            if (rideRequestId != "idle") {
+              FirebaseFirestore.instance
+                  .collection("rideRequests")
+                  .doc(rideRequestId)
+                  .get()
+                  .then((snap) {
+                    if (!mounted) return;
+                    if (snap.exists) {
+                      FlutterRingtonePlayer().playNotification();
+
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (context) =>
+                            NewTripScreen(rideRequestId: rideRequestId),
+                      );
+                    }
+                  });
+            }
+          }
+        });
   }
 
   void checkActiveTrip() {
@@ -229,16 +282,16 @@ class _HomePageState extends State<HomePage>
                     (doc["pickup"] is Map)) {
                   var p = doc["pickup"];
                   pLatLng = LatLng(
-                    double.parse(p["latitude"].toString()),
-                    double.parse(p["longitude"].toString()),
+                    double.parse((p["latitude"] ?? p["lat"]).toString()),
+                    double.parse((p["longitude"] ?? p["lng"]).toString()),
                   );
                 }
-                if (doc.data().toString().contains("dropoff") &&
-                    (doc["dropoff"] is Map)) {
-                  var d = doc["dropoff"];
+                if (doc.data().toString().contains("destination") &&
+                    (doc["destination"] is Map)) {
+                  var d = doc["destination"];
                   dLatLng = LatLng(
-                    double.parse(d["latitude"].toString()),
-                    double.parse(d["longitude"].toString()),
+                    double.parse((d["latitude"] ?? d["lat"]).toString()),
+                    double.parse((d["longitude"] ?? d["lng"]).toString()),
                   );
                 }
               } catch (e) {
@@ -297,9 +350,13 @@ class _HomePageState extends State<HomePage>
                 pickupLatLng = pLatLng;
                 dropoffLatLng = dLatLng;
 
+                print("DEBUG: Active Trip Doc Data: ${doc.data()}");
+
                 riderName = (doc.data() as Map).containsKey("rider_name")
-                    ? doc["rider_name"]
-                    : "Rider";
+                    ? (doc["rider_name"] ?? "Rider")
+                    : ((doc.data() as Map).containsKey("riderName")
+                          ? (doc["riderName"] ?? "Rider")
+                          : "Rider");
                 riderPhone = (doc.data() as Map).containsKey("rider_phone")
                     ? doc["rider_phone"]
                     : "";
@@ -327,10 +384,7 @@ class _HomePageState extends State<HomePage>
                     : "";
 
                 if (cancelledBy == "rider") {
-                  PushNotificationSystem.showNotification(
-                    "Trip Cancelled",
-                    "The Passenger has cancelled the trip.",
-                  );
+                  // Local notification removed
                   if (context.mounted) {
                     showDialog(
                       context: context,
@@ -623,41 +677,155 @@ class _HomePageState extends State<HomePage>
                         // --- IDLE STATE ---
                         if (activeRideStatus == "idle" ||
                             activeRideStatus == "") ...[
-                          Row(
-                            children: [
-                              const Icon(
-                                Icons.access_time,
-                                color: Colors.white60,
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton.icon(
+                              onPressed: () async {
+                                var res = await Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (c) => const CreateTripScreen(),
+                                  ),
+                                );
+                                if (res != null) {
+                                  _startSelfManagedTrip(
+                                    res as Map<String, dynamic>,
+                                  );
+                                }
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: const Color(0xFF252530),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 14,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(12),
+                                  side: BorderSide(
+                                    color: Colors.white.withOpacity(0.1),
+                                  ),
+                                ),
                               ),
-                              const SizedBox(width: 12),
-                              Text(
-                                "Waiting for Rides...",
+                              icon: const Icon(
+                                Icons.add_road,
+                                color: Colors.orange,
+                              ),
+                              label: Text(
+                                "Publish My Trip",
                                 style: GoogleFonts.poppins(
                                   color: Colors.white,
-                                  fontSize: 18,
                                   fontWeight: FontWeight.w600,
                                 ),
                               ),
-                            ],
-                          ),
-                          const SizedBox(height: 10),
-                          const LinearProgressIndicator(
-                            color: Colors.green,
-                            backgroundColor: Colors.white10,
-                          ),
-                          const SizedBox(height: 10),
-                          Text(
-                            "Please stay online to receive trip requests.",
-                            style: GoogleFonts.poppins(
-                              color: Colors.white54,
-                              fontSize: 13,
                             ),
                           ),
                         ],
 
                         // --- TRIP STATE ---
-                        if (activeRideStatus != "idle" &&
+                        if (activeRideStatus == "self_managed") ...[
+                          // --- SEARCHED TRIP UI ---
+                          Row(
+                            children: [
+                              const Icon(
+                                Icons.navigation,
+                                color: Colors.orangeAccent,
+                              ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Text(
+                                  "Ride Published",
+                                  style: GoogleFonts.poppins(
+                                    color: Colors.white,
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.w600,
+                                  ),
+                                ),
+                              ),
+                            ],
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            "From: $pickupAddress",
+                            style: GoogleFonts.poppins(
+                              color: Colors.white54,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 10),
+                          Text(
+                            "To: $dropOffAddress",
+                            style: GoogleFonts.poppins(
+                              color: Colors.white54,
+                              fontSize: 13,
+                            ),
+                          ),
+                          const SizedBox(height: 20),
+                          SizedBox(
+                            width: double.infinity,
+                            child: ElevatedButton(
+                              onPressed: () async {
+                                // 1. Cancel Live Ride if active (Notify User)
+                                if (activeRideRequestId.isNotEmpty) {
+                                  await FirebaseFirestore.instance
+                                      .collection("rideRequests")
+                                      .doc(activeRideRequestId)
+                                      .update({
+                                        "status": "cancelled",
+                                        "cancelled_by": "driver",
+                                      });
+
+                                  // --- SHADOW BOOKING UPDATE (Notification) ---
+                                  FirebaseFirestore.instance
+                                      .collection("bookings")
+                                      .where(
+                                        "rideRequestId",
+                                        isEqualTo: activeRideRequestId,
+                                      )
+                                      .get()
+                                      .then((docs) {
+                                        if (docs.docs.isNotEmpty) {
+                                          docs.docs.first.reference.update({
+                                            "status": "cancelled",
+                                            "cancelledBy": "driver",
+                                          });
+                                        }
+                                      });
+                                  // --------------------------------------------
+                                }
+
+                                // 2. Stop Trip Logic & Reset Driver Status
+                                setState(() {
+                                  activeRideStatus = "idle";
+                                  activeRideRequestId = "";
+                                  polylineSet.clear();
+                                  markersSet.clear();
+                                  circlesSet.clear();
+                                  pLineCoOrdinatesList.clear();
+                                });
+
+                                await FirebaseFirestore.instance
+                                    .collection("online_drivers")
+                                    .doc(FirebaseAuth.instance.currentUser!.uid)
+                                    .update({
+                                      "status": "online",
+                                      "newRideStatus": "waiting_input",
+                                      "destination": FieldValue.delete(),
+                                    });
+                              },
+                              style: ElevatedButton.styleFrom(
+                                backgroundColor: Colors.redAccent,
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(30),
+                                ),
+                                padding: const EdgeInsets.symmetric(
+                                  vertical: 16,
+                                ),
+                              ),
+                              child: const Text("Unpublish Trip"),
+                            ),
+                          ),
+                        ] else if (activeRideStatus != "idle" &&
                             activeRideStatus != "") ...[
+                          // --- REGULAR RIDE REQUEST UI ---
                           Row(
                             mainAxisAlignment: MainAxisAlignment.spaceBetween,
                             children: [
@@ -869,6 +1037,8 @@ class _HomePageState extends State<HomePage>
                                       .collection("rideRequests")
                                       .doc(activeRideRequestId)
                                       .update({"status": "arrived"});
+
+                                  // Shadow update removed
                                 } else if (activeRideStatus == "arrived") {
                                   showOtpDialog();
                                 } else if (activeRideStatus == "ontrip") {
@@ -937,6 +1107,9 @@ class _HomePageState extends State<HomePage>
                                                     "status": "cancelled",
                                                     "cancelled_by": "driver",
                                                   });
+
+                                              // Shadow update removed
+                                              // --------------------------------------------
                                             },
                                             child: const Text(
                                               "Yes",
@@ -991,8 +1164,19 @@ class _HomePageState extends State<HomePage>
             child: const Text("Cancel"),
           ),
           ElevatedButton(
-            onPressed: () {
-              if (otpController.text.trim() == activeRideOtp) {
+            onPressed: () async {
+              // Fetch latest OTP to ensure sync
+              var snap = await FirebaseFirestore.instance
+                  .collection("rideRequests")
+                  .doc(activeRideRequestId)
+                  .get();
+
+              String validOtp = "";
+              if (snap.exists && (snap.data() as Map).containsKey("otp")) {
+                validOtp = (snap.data() as Map)["otp"]?.toString() ?? "";
+              }
+
+              if (otpController.text.trim() == validOtp) {
                 FirebaseFirestore.instance
                     .collection("rideRequests")
                     .doc(activeRideRequestId)
@@ -1147,6 +1331,27 @@ class _HomePageState extends State<HomePage>
           if (snap.exists) {
             var data = snap.data() as Map;
 
+            // Robust Address Parsing
+            String pick = "";
+            if (data["pickup"] is Map) {
+              pick = data["pickup"]["address"] ?? "";
+            } else {
+              pick =
+                  data["pickup_address"] ??
+                  data["pickup"]?.toString() ??
+                  "Unknown Pickup";
+            }
+
+            String dest = "";
+            if (data["destination"] is Map) {
+              dest = data["destination"]["address"] ?? "";
+            } else {
+              dest =
+                  data["dropoff_address"] ??
+                  data["destination"]?.toString() ??
+                  "Unknown Destination";
+            }
+
             // 1. Create Trip Record
             Map<String, dynamic> tripHistoryMap = {
               "driverId": FirebaseAuth.instance.currentUser!.uid,
@@ -1154,8 +1359,8 @@ class _HomePageState extends State<HomePage>
               "paymentAmount": fare,
               "time": FieldValue.serverTimestamp(),
               "status": "completed",
-              "pickupAddress": data["pickup_address"] ?? "",
-              "destinationAddress": data["dropoff_address"] ?? "",
+              "pickupAddress": pick,
+              "destinationAddress": dest,
             };
 
             FirebaseFirestore.instance.collection("trips").add(tripHistoryMap);
@@ -1177,5 +1382,104 @@ class _HomePageState extends State<HomePage>
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text("Trip Completed Successfully!")),
     );
+  }
+
+  void _startSelfManagedTrip(Map<String, dynamic> data) async {
+    LatLng? pLat;
+    LatLng? dLat;
+    String pAddr = "";
+    String dAddr = "";
+
+    if (data["pickup"]["lat"] != null) {
+      pLat = LatLng(data["pickup"]["lat"], data["pickup"]["lng"]);
+      pAddr = data["pickup"]["address"];
+    } else {
+      // Use Current
+      if (currentPositionOfUser != null) {
+        pLat = LatLng(
+          currentPositionOfUser!.latitude,
+          currentPositionOfUser!.longitude,
+        );
+        pAddr =
+            await CommonMethods.convertGeoGraphicCoOrdinatesToHumanReadableAddress(
+              pLat!,
+            );
+      }
+    }
+
+    if (data["dropoff"]["lat"] != null) {
+      dLat = LatLng(data["dropoff"]["lat"], data["dropoff"]["lng"]);
+      dAddr = data["dropoff"]["address"];
+    }
+
+    if (pLat != null && dLat != null) {
+      setState(() {
+        activeRideStatus = "self_managed";
+        pickupLatLng = pLat;
+        dropoffLatLng = dLat;
+        pickupAddress = pAddr;
+        dropOffAddress = dAddr;
+        bottomSheetHeight = 260; // Adjust height
+      });
+
+      // Draw Route
+      await retrieveDirectionDetails(pLat, dLat, "My Start", "My Destination");
+
+      // Extract Trip Date (if any)
+      int? tripDate = data["tripDate"]; // Timestamp in millis
+
+      if (tripDate != null &&
+          DateTime.fromMillisecondsSinceEpoch(
+            tripDate,
+          ).isAfter(DateTime.now().add(const Duration(hours: 1)))) {
+        // --- SCHEDULED TRIP (FUTURE) ---
+        // Save to 'scheduled_trips' collection
+        FirebaseFirestore.instance.collection("scheduled_trips").add({
+          "driverId": FirebaseAuth.instance.currentUser!.uid,
+          "driverName": driverName,
+          "driverPhone": driverPhone,
+          "pickup": {
+            "lat": pLat.latitude,
+            "lng": pLat.longitude,
+            "address": pAddr,
+          },
+          "destination": {
+            "lat": dLat.latitude,
+            "lng": dLat.longitude,
+            "address": dAddr,
+          },
+          "tripDate": tripDate,
+          "route": tripDirectionDetails?.encodedPoints ?? "",
+          "seats": 4,
+          "status": "scheduled",
+          "createdAt": FieldValue.serverTimestamp(),
+        });
+
+        // Show Confirmation
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text("Trip Scheduled! You can close the app now."),
+            backgroundColor: Colors.green,
+            duration: Duration(seconds: 4),
+          ),
+        );
+      } else {
+        // --- LIVE TRIP (NOW) ---
+        // Update live status for immediate matching
+        FirebaseFirestore.instance
+            .collection("online_drivers")
+            .doc(FirebaseAuth.instance.currentUser!.uid)
+            .update({
+              "newRideStatus": "idle", // Ready for requests
+              "destination": {
+                "lat": dLat.latitude,
+                "lng": dLat.longitude,
+                "address": dAddr,
+              },
+              "route": tripDirectionDetails?.encodedPoints ?? "",
+              "tripDate": tripDate, // Null if immediate
+            });
+      }
+    }
   }
 }

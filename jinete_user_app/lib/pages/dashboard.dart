@@ -5,7 +5,9 @@ import 'package:jinete/pages/profile_screen.dart';
 import 'package:jinete/pages/trips_page.dart';
 
 class Dashboard extends StatefulWidget {
-  const Dashboard({super.key});
+  final int initialIndex;
+  final String? autoStartRideId;
+  const Dashboard({super.key, this.initialIndex = 0, this.autoStartRideId});
 
   @override
   State<Dashboard> createState() => _DashboardState();
@@ -19,7 +21,9 @@ class _DashboardState extends State<Dashboard>
   @override
   void initState() {
     super.initState();
-    controller = TabController(length: 3, vsync: this);
+    indexSelected = widget.initialIndex;
+    controller =
+        TabController(length: 3, vsync: this, initialIndex: indexSelected);
   }
 
   @override
@@ -41,10 +45,10 @@ class _DashboardState extends State<Dashboard>
       body: TabBarView(
         physics: const NeverScrollableScrollPhysics(),
         controller: controller,
-        children: const [
-          HomePage(),
-          TripsPage(),
-          ProfileScreen(),
+        children: [
+          HomePage(autoStartRideId: widget.autoStartRideId),
+          const TripsPage(),
+          const ProfileScreen(),
         ],
       ),
       bottomNavigationBar: BottomNavigationBar(

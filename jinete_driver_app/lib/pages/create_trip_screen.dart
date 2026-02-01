@@ -1,17 +1,17 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:google_fonts/google_fonts.dart';
-import 'package:jinete/methods/common_methods.dart';
-import 'package:jinete/models/place_prediction.dart';
-import 'dart:async';
+import 'package:jinete_driver_app/methods/common_methods.dart';
+import 'package:jinete_driver_app/models/place_prediction.dart';
 
-class SearchDestinationPage extends StatefulWidget {
-  const SearchDestinationPage({super.key});
+class CreateTripScreen extends StatefulWidget {
+  const CreateTripScreen({super.key});
 
   @override
-  State<SearchDestinationPage> createState() => _SearchDestinationPageState();
+  State<CreateTripScreen> createState() => _CreateTripScreenState();
 }
 
-class _SearchDestinationPageState extends State<SearchDestinationPage> {
+class _CreateTripScreenState extends State<CreateTripScreen> {
   TextEditingController pickUpTextEditingController = TextEditingController();
   TextEditingController dropOffTextEditingController = TextEditingController();
   List<PlacePrediction> placePredictionList = [];
@@ -35,6 +35,28 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
   double? dropoffLat;
   double? dropoffLng;
   DateTime? selectedDate; // Scheduling
+
+  @override
+  void initState() {
+    super.initState();
+    pickUpTextEditingController.text = "My Current Location";
+
+    pickUpFocusNode.addListener(() {
+      if (pickUpFocusNode.hasFocus) {
+        setState(() {
+          isPickupFocused = true;
+        });
+      }
+    });
+
+    dropOffFocusNode.addListener(() {
+      if (dropOffFocusNode.hasFocus) {
+        setState(() {
+          isPickupFocused = false;
+        });
+      }
+    });
+  }
 
   @override
   void dispose() {
@@ -93,23 +115,13 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
     }
   }
 
-  @override
-  void initState() {
-    super.initState();
-    pickUpTextEditingController.text = "My Current Location";
-
-    pickUpFocusNode.addListener(() {
-      if (pickUpFocusNode.hasFocus) {
+  void searchPlace(String text) {
+    if (_debounce?.isActive ?? false) _debounce!.cancel();
+    _debounce = Timer(const Duration(milliseconds: 1000), () async {
+      if (text.length > 2) {
+        var res = await CommonMethods.searchPlace(text);
         setState(() {
-          isPickupFocused = true;
-        });
-      }
-    });
-
-    dropOffFocusNode.addListener(() {
-      if (dropOffFocusNode.hasFocus) {
-        setState(() {
-          isPickupFocused = false;
+          placePredictionList = res;
         });
       }
     });
@@ -153,7 +165,7 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                   ),
                   const SizedBox(width: 16),
                   Text(
-                    "Set Drop-off",
+                    "Set Destination",
                     style: GoogleFonts.poppins(
                       fontSize: 20,
                       fontWeight: FontWeight.w600,
@@ -194,7 +206,7 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                           focusNode: pickUpFocusNode,
                           style: GoogleFonts.poppins(color: _textColor),
                           decoration: InputDecoration(
-                            hintText: "PickUp Location",
+                            hintText: "Pickup Location",
                             hintStyle: GoogleFonts.poppins(color: _hintColor),
                             fillColor: _inputColor,
                             filled: true,
@@ -203,7 +215,9 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                               borderSide: BorderSide.none,
                             ),
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
                           ),
                           onChanged: (text) {
                             searchPlace(text);
@@ -218,8 +232,11 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                   // Drop Off Row
                   Row(
                     children: [
-                      Icon(Icons.location_on,
-                          color: Colors.redAccent, size: 20),
+                      Icon(
+                        Icons.location_on,
+                        color: Colors.redAccent,
+                        size: 20,
+                      ),
                       const SizedBox(width: 12),
                       Expanded(
                         child: TextField(
@@ -227,7 +244,7 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                           focusNode: dropOffFocusNode,
                           style: GoogleFonts.poppins(color: _textColor),
                           decoration: InputDecoration(
-                            hintText: "Where to?",
+                            hintText: "Where are you going?",
                             hintStyle: GoogleFonts.poppins(color: _hintColor),
                             fillColor: _inputColor,
                             filled: true,
@@ -236,7 +253,9 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                               borderSide: BorderSide.none,
                             ),
                             contentPadding: const EdgeInsets.symmetric(
-                                horizontal: 16, vertical: 12),
+                              horizontal: 16,
+                              vertical: 12,
+                            ),
                           ),
                           onChanged: (text) {
                             searchPlace(text);
@@ -256,21 +275,24 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
               onTap: _pickDateTime,
               child: Container(
                 margin: const EdgeInsets.symmetric(horizontal: 20),
-                padding:
-                    const EdgeInsets.symmetric(horizontal: 20, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 20,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: _cardColor,
                   borderRadius: BorderRadius.circular(12),
                   border: Border.all(
-                      color:
-                          selectedDate != null ? _accentColor : Colors.white10),
+                    color: selectedDate != null ? _accentColor : Colors.white10,
+                  ),
                 ),
                 child: Row(
                   children: [
                     Icon(
                       Icons.calendar_month,
-                      color:
-                          selectedDate != null ? _accentColor : Colors.white54,
+                      color: selectedDate != null
+                          ? _accentColor
+                          : Colors.white54,
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -294,7 +316,7 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                           });
                         },
                         child: const Icon(Icons.close, color: Colors.white54),
-                      )
+                      ),
                   ],
                 ),
               ),
@@ -305,37 +327,32 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
             // Prediction List
             Expanded(
               child: ListView.separated(
-                keyboardDismissBehavior:
-                    ScrollViewKeyboardDismissBehavior.onDrag,
                 itemCount: placePredictionList.length,
                 physics: const ClampingScrollPhysics(),
                 itemBuilder: (context, index) {
                   return GestureDetector(
-                    behavior: HitTestBehavior.opaque, // Catch all taps
+                    behavior: HitTestBehavior.opaque,
                     onTap: () async {
-                      // Dismiss Keyboard immediately
+                      // Dismiss Keyboard
                       FocusScope.of(context).unfocus();
 
-                      // Show Loading Dialog
+                      // Show Loading
                       showDialog(
                         context: context,
                         barrierDismissible: false,
                         builder: (c) => Center(
-                          child: CircularProgressIndicator(
-                            color: _accentColor,
-                          ),
+                          child: CircularProgressIndicator(color: _accentColor),
                         ),
                       );
 
-                      // 1. Get Place ID
+                      // Get Place Details
                       String placeId = placePredictionList[index].placeId!;
+                      var details = await CommonMethods.getPlaceDetails(
+                        placeId,
+                      );
 
-                      // 2. Get Details (Lat/Lng)
-                      var details =
-                          await CommonMethods.getPlaceDetails(placeId);
-
-                      // Close Loading Dialog
-                      Navigator.pop(context);
+                      if (!context.mounted) return;
+                      Navigator.pop(context); // Close loading
 
                       if (details != null) {
                         var location = details["location"];
@@ -350,7 +367,6 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                             pickupLng = lng;
                             placePredictionList.clear();
                           });
-                          // Delay slightly to allow UI update before focus change if needed
                           dropOffFocusNode.requestFocus();
                         } else {
                           setState(() {
@@ -360,9 +376,8 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                             dropoffLng = lng;
                           });
 
-                          Map<String, dynamic> responseMap = {
-                            "img": "ignored",
-                          };
+                          // Return Result
+                          Map<String, dynamic> responseMap = {};
 
                           if (pickupLat != null && pickupLng != null) {
                             responseMap["pickup"] = {
@@ -370,17 +385,22 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
                               "lng": pickupLng,
                               "address": pickUpTextEditingController.text,
                             };
-                          }
-
-                          if (dropoffLat != null && dropoffLng != null) {
-                            responseMap["dropoff"] = {
-                              "lat": dropoffLat,
-                              "lng": dropoffLng,
-                              "address": dropOffTextEditingController.text,
+                          } else {
+                            // Use 'current' if not set
+                            responseMap["pickup"] = {
+                              "lat": null, // Handle in HomePage
+                              "lng": null,
+                              "address": "current_location",
                             };
                           }
 
-                          // Add Schedule
+                          responseMap["dropoff"] = {
+                            "lat": dropoffLat,
+                            "lng": dropoffLng,
+                            "address": dropOffTextEditingController.text,
+                          };
+
+                          // Add Schedule Date
                           if (selectedDate != null) {
                             responseMap["tripDate"] =
                                 selectedDate!.millisecondsSinceEpoch;
@@ -388,8 +408,6 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
 
                           Navigator.pop(context, responseMap);
                         }
-                      } else {
-                        // print("DEBUG: details returned NULL from getPlaceDetails");
                       }
                     },
                     child: PlacePredictionTileDesign(
@@ -411,18 +429,6 @@ class _SearchDestinationPageState extends State<SearchDestinationPage> {
       ),
     );
   }
-
-  void searchPlace(String text) async {
-    if (_debounce?.isActive ?? false) _debounce!.cancel();
-    _debounce = Timer(const Duration(milliseconds: 1000), () async {
-      if (text.length > 2) {
-        var res = await CommonMethods.searchPlace(text);
-        setState(() {
-          placePredictionList = res;
-        });
-      }
-    });
-  }
 }
 
 class PlacePredictionTileDesign extends StatelessWidget {
@@ -436,13 +442,8 @@ class PlacePredictionTileDesign extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 16),
       child: Row(
         children: [
-          const Icon(
-            Icons.location_on,
-            color: Colors.grey,
-          ),
-          const SizedBox(
-            width: 12,
-          ),
+          const Icon(Icons.location_on, color: Colors.grey),
+          const SizedBox(width: 12),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -450,14 +451,9 @@ class PlacePredictionTileDesign extends StatelessWidget {
                 Text(
                   placePrediction.mainText ?? "",
                   overflow: TextOverflow.ellipsis,
-                  style: GoogleFonts.poppins(
-                    fontSize: 16,
-                    color: Colors.white,
-                  ),
+                  style: GoogleFonts.poppins(fontSize: 16, color: Colors.white),
                 ),
-                const SizedBox(
-                  height: 2,
-                ),
+                const SizedBox(height: 2),
                 Text(
                   placePrediction.secondaryText ?? "",
                   overflow: TextOverflow.ellipsis,

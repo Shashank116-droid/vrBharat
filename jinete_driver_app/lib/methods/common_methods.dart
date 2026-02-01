@@ -7,6 +7,8 @@ import 'package:http/http.dart' as http;
 import 'package:jinete_driver_app/global/global_var.dart';
 import 'package:geocoding/geocoding.dart';
 
+import 'package:jinete_driver_app/models/place_prediction.dart';
+
 class CommonMethods {
   Future<bool> checkConnectivity(BuildContext context) async {
     var connectionResult = await Connectivity().checkConnectivity();
@@ -25,6 +27,50 @@ class CommonMethods {
   void displaySnackBar(String messageText, BuildContext context) {
     var snackBar = SnackBar(content: Text(messageText));
     ScaffoldMessenger.of(context).showSnackBar(snackBar);
+  }
+
+  static Future<List<PlacePrediction>> searchPlace(String placeName) async {
+    String urlAutoCompleteAPI =
+        "https://maps.googleapis.com/maps/api/place/autocomplete/json?input=$placeName&key=$googleMapKey&components=country:in";
+
+    try {
+      var response = await http.get(Uri.parse(urlAutoCompleteAPI));
+      if (response.statusCode == 200) {
+        var data = jsonDecode(response.body);
+        if (data["status"] == "OK") {
+          var predictions = data["predictions"] as List;
+          return predictions.map((e) => PlacePrediction.fromJson(e)).toList();
+        }
+      }
+    } catch (e) {
+      // print("Error in SearchPlace: $e");
+    }
+    return [];
+  }
+
+  static Future<Map<String, dynamic>?> getPlaceDetails(String placeId) async {
+    String urlDetailsAPI =
+        "https://maps.googleapis.com/maps/api/place/details/json?place_id=$placeId&fields=geometry&key=$googleMapKey";
+
+    try {
+      var response = await http.get(Uri.parse(urlDetailsAPI));
+      if (response.statusCode == 200) {
+        var data = jsonDecode(response.body);
+        if (data["status"] == "OK") {
+          if (data["result"]["geometry"]["location"] != null) {
+            return {
+              "location": {
+                "latitude": data["result"]["geometry"]["location"]["lat"],
+                "longitude": data["result"]["geometry"]["location"]["lng"],
+              },
+            };
+          }
+        }
+      }
+    } catch (e) {
+      // print("Error in GetPlaceDetails: $e");
+    }
+    return null;
   }
 
   static Future<DirectionDetails?> getDirectionDetails(

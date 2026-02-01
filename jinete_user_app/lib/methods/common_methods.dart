@@ -199,7 +199,7 @@ class CommonMethods {
 
   static double calculateFareAmount(DirectionDetails directionDetails) {
     double distancePerKmAmount = 1.9;
-    double baseFareAmount = 20;
+    double baseFareAmount = 0; // Base fare removed as per new requirement
 
     double totalDistance = directionDetails.distanceValueDigits! / 1000;
 
